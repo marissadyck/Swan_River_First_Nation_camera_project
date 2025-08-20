@@ -1,0 +1,659 @@
+---
+title: "ACME landscape covaraite exploration script for SRFN project"
+author: "Marissa Dyck"
+date: "2025-1-9"
+output: 
+  html_document:
+    theme: journal
+    toc: yes
+    toc_float: yes
+---
+
+
+The first two chunks of this r markdown file after the r setup allow for plot zooming, but it also means that the html file must be opened in a browser to view the document properly. When it knits in RStudio the preview will appear empty but the html when opened in a browser will have all the info and you can click on each plot to Zoom in on it. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+```
+
+```{css zoom-lib-src, echo = FALSE}
+script src = "https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"
+```
+
+```{js zoom-jquery, echo = FALSE}
+ $(document).ready(function() {
+    $('body').prepend('<div class=\"zoomDiv\"><img src=\"\" class=\"zoomImg\"></div>');
+    // onClick function for all plots (img's)
+    $('img:not(.zoomImg)').click(function() {
+      $('.zoomImg').attr('src', $(this).attr('src')).css({width: '100%'});
+      $('.zoomDiv').css({opacity: '1', width: 'auto', border: '1px solid white', borderRadius: '5px', position: 'fixed', top: '50%', left: '50%', marginRight: '-50%', transform: 'translate(-50%, -50%)', boxShadow: '0px 0px 50px #888888', zIndex: '50', overflow: 'auto', maxHeight: '100%'});
+    });
+    // onClick function for zoomImg
+    $('img.zoomImg').click(function() {
+      $('.zoomDiv').css({opacity: '0', width: '0%'}); 
+    });
+  });
+```
+
+# Before you begin
+
+## Notes
+
+
+If you have question please email the most recent author, currently 
+
+Marissa A. Dyck   
+Postdoctoral research fellow    
+University of Victoria    
+School of Environmental Studies     
+Email: [marissadyck17@gmail.com](marissadyck17@gmail.com)      
+
+(*update/add authors as needed*)
+
+
+## R and RStudio
+
+Before starting you should ensure you have the latest version of R and RStudio downloaded. This code was generated under R version 4.2.3 and with RStudio version 2024.04.2+764.    
+
+You can download R and RStudio [HERE](https://posit.co/download/rstudio-desktop/)   
+
+
+## R markdown
+
+This script is written in R markdown and thus uses a mix of coding markup languages and R. If you are planning to run this script with new data or make any modifications you will want to be familiar with some basics of R markdown.
+
+Below is an R markdown cheatsheet to help you get started,    
+[R markdown cheatsheet](https://www.rstudio.com/wp-content/uploads/2015/02/rmarkdown-cheatsheet.pdf)    
+
+
+## Install packages
+
+If you don't already have the following packages installed, use the code below to install them. *NOTE this will not run automatically as eval=FALSE is included in the chunk setup (i.e. I don't want it to run every time I run this code since I have the packages installed)
+
+```{r install packages, eval=FALSE}
+
+install.packages('tidyverse')
+install.packages('PerformanceAnalytics')
+install.packages('Hmisc')
+
+```
+
+## Load libraries
+
+Then load the packages to your library.
+
+```{r libraries, message=FALSE}
+
+library(tidyverse) # data tidying, visualization, and much more; this will load all tidyverse packages, can see complete list using tidyverse_packages()
+library(PerformanceAnalytics)    #Used to generate a correlation plot
+library(Hmisc) # used to generate histograms for all variables in data frame
+
+```
+
+
+# Covariate data
+
+## Import covariate data 
+
+We have three data files that represent possible covariates for the analysis and we will import all of them at once here. 
+
+1. SRFN_HFI.csv which contains human footprint inventory (anthropogenic disturbances) on the landscape from [ABMI's Wall-to-Wall Human Footprint Inventory - Year 2021](https://abmi.ca/abmi-home/data-resources/data-portal-main/data-portal/single-data-portal-detail.html?name=46)    
+
+2. SRFN_landscape.csv which contains landcover inventory (landcover types) on the landscape from [ABMI's Wall-to-Wall landcover Inventory - Year 2010](https://abmi.ca/abmi-home/data-resources/data-portal-main/data-portal/single-data-portal-detail.html?name=63)   
+
+3. SRFN_harvest.csv which contains proportional harvest per year? from the same source as the HFI data, but we extracted this after-the-fact to get info on the years harvested which wasn't in our original download so we will have to add it back to the data
+
+```{r import covariate data}
+
+# these data files have a similar format so we can read them in together using the map() function in the purrr package
+
+srfn_covariate_data <-    
+  # provide file path (e.g. folders to find the data)
+  file.path('data/raw',
+            
+            # provide the file names
+            c('SRFN_HFI.csv',
+              'SRFN_landcover.csv',
+              'SRFN_harvest.csv')) %>%
+  
+  # use purrr map to read in files, the ~.x is a placeholder that refers to the object before the last pipe (aka the list of data we are reading in) so all functions inside the map() after ~.x will be performed on all the objects in the list we provided
+  map(~.x %>%
+        read_csv(.,
+                 
+                 # specify how to read in the various columns
+                 col_types = cols(Site = col_factor(),
+                                  BUFF_DIST = col_integer(),
+                                  .default = col_number())) %>%
+        
+        # rename site column to site_number fo accuracy and joining data later
+        rename(site_number = Site) %>% 
+        
+        
+        # set the column names to lower case which makes it easier to reference them later so we don't have to type in all caps
+        set_names(
+          names(.) %>% 
+            tolower()) %>% 
+  
+    # Reorder columns: site_number, buff_dist, then the rest alphabetically
+        select(site_number, buff_dist, sort(setdiff(names(.), c('site_number', 'buff_dist'))))) %>%
+          
+           
+  # set the names of the two files in the list, if you don't run this they will be named numerically (e.g. [1], [2]) which can get confusing
+  purrr::set_names('HFI',
+                   'VEG',
+                   'harvest')
+
+
+
+```
+
+> What we did above is create a list which contains three elements, the three dataframes we just read in, we did a bit of data tidying and then named each element (HFI, VEG, and harvest) so we can easily reference them from the list later
+
+
+## Data checks
+
+### Strucutre
+
+Even though we set some of the columns to read in as a specific type in the data import step it's always a good idea to check internal structure.
+
+```{r}
+str(srfn_covariate_data)
+```
+
+From a quick glance everything looks good.
+
+### Sites
+
+Now let's check that all the sites are accounted for, there should be 53 based on the sites that had gps info in the GrizzleyRidge_camera file
+
+```{r covariates site_number names}
+
+# check that the sites are all there and entered correctly
+
+# since the data sets are in a list we need to call the list first, then the data name in the list, then the column name
+levels(srfn_covariate_data$HFI$site_number)
+levels(srfn_covariate_data$VEG$site_number)
+levels(srfn_covariate_data$harvest$site_number)
+```
+We want to make sure the site names match with the camera data so let's import the timelapse data from the last script (01_ACME_SRFN_camera....) to check
+
+
+> All the sites look like they match up 
+
+### Column names
+
+We should check that the column names all look good, there are a ton for the HFI data frame so we won't look at each of the features individually but check that the general formatting/naming is okay
+
+```{r HFI names}
+
+names(srfn_covariate_data$HFI)
+```
+
+These look okay but we should replace the dash '-' with and underscore '\_' to match formatting of other files and because it's easier for R to work with. We will do this in a later step with any other issues because we don't need it fixed now
+
+We also want to add array and camera columns which we can do using the site data.
+
+Let's check the VEG data too
+
+```{r VEG names}
+
+names(srfn_covariate_data$VEG)
+```
+
+And finally the harvest data
+
+```{r harvest names}
+
+names(srfn_covariate_data$harvest)
+```
+
+
+### NAs
+
+Let's check the summary for any NAs that shouldn't be in the data, mostly we are looking for NAs in the site_number or buff_dist columns
+
+```{r}
+
+summary(srfn_covariate_data$HFI)
+summary(srfn_covariate_data$VEG)
+summary(srfn_covariate_data$harvest)
+```
+
+Everything looks good!
+
+## Data formatting
+
+As with the previous sections this section will likely change each year but offers a good starting point, and I do all the data manipulation in one code chunk but run each portion individually as I build the chunk to make sure it's working.
+
+This code will do the following data formatting on all files simultaneously using purrr::map
+
+1.  Change the column names - replace dashes with underscores\
+- no additional steps yet
+
+```{r format covariate data}
+
+ srfn_covariate_data_fixed <- srfn_covariate_data %>% 
+  
+  map(
+    ~.x %>% 
+      
+      set_names(
+        names(.) %>% 
+          
+          # replace the '-' with '_' in the feature column names
+          str_replace_all(pattern = '-', # provide the character pattern to look for (if you don't keep the \\ it won't work)
+                          replacement = '_')))
+```
+
+Now let's recheck the data, data structure, and the site_numbers with the deployment data, you can run each of these individually or all at once and review each one
+
+```{r covs data fixed site check}
+
+# check structure of variables
+str(srfn_covariate_data_fixed)
+
+# take a look at the column names
+names(srfn_covariate_data_fixed$HFI)
+names(srfn_covariate_data_fixed$VEG)
+names(srfn_covariate_data_fixed$harvest)
+
+```
+
+## Join covariate data
+
+Now we need to join the three files together
+
+```{r join covariate data}
+covariates_all <- srfn_covariate_data_fixed$HFI %>% 
+  
+  #use full join in case any issues with missing observations but we should be good since we checked the site_number names
+  full_join(srfn_covariate_data_fixed$VEG,
+            by = c('site_number', 'buff_dist')) %>% 
+  
+  full_join(srfn_covariate_data_fixed$harvest,
+            by = c('site_number', 'buff_dist')) 
+
+
+head(covariates_all)
+
+summary(covariates_all)
+
+```
+
+It's missing the columns for site and array from the reference data, but when we merge with the detections data it will get added because the sites will match up and there are no issues with duplicate sites. 
+
+One last thing, there's a duplicate column that we didn't use to join the data because it repeats for each site, buffer_area which is in the harvest and HFI data sets, we won't need if for analyses so let's remove now to clean it up 
+
+```{r remove buffer_area}
+
+covariates_all <- covariates_all %>% 
+  
+  select(!contains('buffer_area'))
+```
+I opened the data in my Rstudio viewer window to double check this worked
+
+## Finish covariates data
+
+### Save data
+
+Let's also save this for future use
+
+```{r save joined covariate data}
+
+# save joined data 
+write_csv(covariates_all,
+          'data/processed/srfn_covariates.csv')
+
+```
+
+
+### Remove messy data
+
+Now that we've merged, cleaned, and reformatted the data we don't need the list file or messy merged data anymore. Let's remove these from the environment so we don't accidentally use them. 
+
+```{r rm messy data}
+
+rm(srfn_covariate_data,
+   srfn_covariate_data_fixed)
+```
+
+
+# Data formatting
+
+There are too many covariates to include in the models individually and many of them describe similar HFI features. 
+
+
+The covariate_table and the README file in this repository include descriptions of each feature from  the [ABMI human footprints wall to wall data download website for Year 2021](https://abmi.ca/home/data-analytics/da-top/da-product-overview/Human-Footprint-Products/HF-inventory.html); which can also be found in the relevant_literature folder of this repository (HFI_2021_v1_0_Metadata_Final.pdf).
+
+
+## Group covaraites
+
+As we prepare to lump the covariates together, we may need to reference the column names. Let's print that now so we have it fresh in the console. 
+
+```{r covs names}
+
+names(covariates_all)
+```
+>Quick note to check with Emerald on, none of the ris features that came up in the second extraction of the OSM data are present here
+
+Now we will use the `mutate()` function with some tidyverse trickery (i.e., nesting `across()` and `contains()` in `rowsums()`) to sum across each observation (row) by searching for various character strings. If there isn't a common character string for multiple variables we want to sum then we provide each one individually. We can also combine these methods (e.g., with 'facilities' [see code]).
+
+```{r format covs}
+
+hfi_covariates_grouped <- covariates_all %>% 
+  
+  # rename 'vegetated_edge_roads so that we can use road as keyword to group roads without including this feature
+  rename('vegetated_edge_rds' = vegetated_edge_roads) %>% 
+  
+  # within the mutate function create new column names for the grouped variables
+  mutate(
+    # borrowpits
+    borrowpits = rowSums(across(contains('borrowpit'))) + # here we use rowsums with across() and contains() to sum acrross each row any values for columns that contain the keyword above. Be careful when using that there aren't any variables that match the string (keyword) provided that you don't want to include!
+      
+      dugout +
+      lagoon +
+      sump,
+    
+    
+    # non-harvest clearings
+    clearings = rowSums(across(contains('clearing'))) +
+      runway,
+    
+    # cultivations
+    cultivation = crop + 
+      cultivation_abandoned +
+      fruit_vegetables +
+      rough_pasture +
+      tame_pasture,
+    
+    # harvest areas
+    harvest = rowSums(across(contains('harvest'))),
+    
+    # industrial facilities
+    facilities = rowSums(across(contains('facility'))) +
+      rowSums(across(contains('plant'))) +
+      camp_industrial +
+      mill +
+      urban_industrial,
+    
+    # mine areas
+    mines = rowSums(across(contains('mine'))) +
+      rowSums(across(contains('tailing'))) +
+      grvl_sand_pit,
+    
+    # railways
+    railways = rowSums(across(contains('rlwy'))),
+    
+    # reclaimed areas
+    reclaimed = rowSums(across(contains('reclaimed'))),
+    
+    # recreation areas
+    recreation = campground +
+      golfcourse +
+      greenspace +
+      recreation,
+    
+    # residential areas (can't use residence as keyword because 'residence_clearing' is in clearing unless we rearrange groupings or rename that one)
+    residential = country_residence +
+      rural_residence +
+      urban_residence,
+    
+    # roads (we renamed 'vegetated_edge_roads' above to 'vegetated_edge_rds' so we can use roads as keyword here which saves a bunch of coding as there are many many road variables)
+    roads = rowSums(across(contains('road'))) +
+      airp_runway +
+      transfer_station,
+    
+    # seismic lines
+    seismic_lines = conventional_seismic,
+    
+    # 3D sesimic lines (put the 3D at the end though to make R happy)
+    seismic_lines_3D = low_impact_seismic,
+    
+    # transmission lines
+    transmission_lines = rowSums(across(contains('transmission'))),
+    
+    # trails
+    trails = rowSums(across(contains('trail'))),
+    
+    # vegetated edges
+    veg_edges = rowSums(across(contains('vegetated'))) +
+      surrounding_veg,
+    
+    # man-made water features
+    water = canal +
+      reservoir,
+    
+    # well sites (this probably includes 'clearing_wellpad' need to check)
+    wells = rowSums(across(contains('well'))),
+    
+    # we will group harvest into two 'bins' years 2000 + and pre 2000, the below code only works if the columns are ordered numerically and no columns of non-harvest data included between the necessary columns
+    harvest_pre2000 = rowSums(across(`1940`:`1999`)),
+       harvest_2000 = rowSums(across(`2000`:`2021`)),
+    
+    # remove columns that were used to create new columns to tidy the data frame
+         .keep = 'unused') %>% 
+  
+  # now lets rename the landcover types which are currently just numbers and that isn't super informative
+   # rename landcover classes
+  rename(
+    lc_grassland = '110',
+    lc_coniferous = '210',
+    lc_broadleaf = '220',
+    lc_mixed = '230',
+    lc_developed = '34',
+    lc_shrub = '50',
+    lc_water = '20',
+    lc_bareground = '33',
+    lc_agriculture = '120') %>% 
+  
+  # reorder alphabetically except site_number and buff_dist
+  select(order(colnames(.))) %>% 
+  
+  # we want to move the columns that aren't HFI features or landcover to the front
+  relocate(.,
+           c(site_number,
+             buff_dist)) %>% 
+  
+  # reorder variables so the veg data is after all the HFI data
+  relocate(starts_with('lc_'),
+           .after = wells)
+
+# see what's left
+names(hfi_covariates_grouped)
+
+# check the structure of new data
+str(hfi_covariates_grouped)
+
+# check summary of new data
+summary(hfi_covariates_grouped)
+```
+
+Okay this gives us a smaller data set to work with but I think we can clean it up further based on the summaries here there are several features we don't have a lot of data for, we can remove any with all zeros here and check the others visually with some histograms of the data
+
+```{r remove all zeros}
+hfi_covariates_grouped <- hfi_covariates_grouped %>%
+  select(where(~ !all(. == 0)))
+```
+
+
+## Grouped histograms
+
+Let's look at the histograms again and see if we need to remove any features or feature groups without enough data; I'm not worrying about the years of harevst data yet
+
+```{r covs grouped histograms}
+
+# Define the starting column and get all column names from that point
+start_col <- 'borrowpits'
+columns_to_plot <- names(hfi_covariates_grouped)[which(names(hfi_covariates_grouped) == start_col):ncol(hfi_covariates_grouped)]
+
+# Loop over the selected columns and create histograms
+for (col in columns_to_plot) {
+  hist(hfi_covariates_grouped[[col]], main = col, xlab = col)
+}
+```
+> IMO we don't have enough variation in data to use the following features/feature groups
+
+* borrowpits
+* clearings
+* Cultivation ?
+* facilities 
+* mines
+* railways
+* Recreation    
+* Residential 
+* seismic_lines_3d
+* trails
+* transmission_lines
+* Water (industrial sources)
+* agriculutre?
+* bareground
+* lc_water?
+ 
+
+
+Also, there's not a lot of data for the following features, which are similar and of interest to OSM, so in the past they've been grouped together and we will here as well
+
+* Borrowpits    
+* Facilities    
+* Mines
+
+> For this analysis we will also combine these
+
+
+## Group covariates further
+
+So let's modify this data and remove those features for now **this step will need to be changed each year likely**
+
+
+```{r covs remove features}
+
+hfi_covariates_grouped_2 <- hfi_covariates_grouped %>% 
+  
+  # create column industrial
+  mutate(
+    industrial = borrowpits +
+    clearings +
+    facilities +
+    mines,
+    
+    # remove columns we used to make this variable
+    .keep = 'unused') %>% 
+  
+  # remove other features we don't need
+  select(!c(cultivation,
+            recreation,
+            residential,
+            seismic_lines_3D,
+            trails,
+            transmission_lines,
+            water,
+            railways,
+            lc_bareground,
+            lc_water)) %>% 
+  
+  # order again
+  # reorder alphabetically except site_number and buff_dist
+  select(order(colnames(.))) %>% 
+  
+  # we want to move the columns that aren't HFI features or landcover to the front
+  relocate(.,
+           c(site_number,
+             buff_dist)) %>% 
+  
+  # reorder variables so the veg data is after all the HFI data
+  relocate(starts_with('lc_'),
+           .after = wells)
+  
+ 
+
+# check that it worked
+names(hfi_covariates_grouped_2)
+```
+
+Let's look at the histograms again
+```{r covs grouped histograms 2}
+
+# Define the starting column and get all column names from that point
+start_col <- 'harvest'
+columns_to_plot <- names(hfi_covariates_grouped_2)[which(names(hfi_covariates_grouped_2) == start_col):ncol(hfi_covariates_grouped_2)]
+
+# Loop over the selected columns and create histograms
+for (col in columns_to_plot) {
+  hist(hfi_covariates_grouped_2[[col]], main = col, xlab = col)
+}
+```
+
+* definitely need to drop industrial 
+* possibly agriculture?
+
+```{r reduce further}
+hfi_covariates_grouped_2 <- hfi_covariates_grouped_2 %>% 
+  
+  select(!c(industrial))
+```
+
+
+
+## Remove messy data
+
+Let's remove the data frames we no longer need. 
+
+```{r rm messy data 2}
+
+rm(covariates_all,
+   covariates_fixed,
+   covariates_grouped)
+```
+
+
+## Add full site name 
+
+Now we need to add a column with the full site name from the reference data so this data can easily be joined with the detection data later
+
+### Import ref data
+
+First let's read in the reference data
+
+```{r import ref csv}
+
+sites <- read_csv('data/raw/reference.csv',
+                  
+                  # specify column types
+                  col_types = cols(.default = col_factor())) %>% 
+
+# I don't like the original column names I think they are confusing so I'm quick going to change them here
+rename(site_number = site,
+       site = real_site)
+
+```
+
+Now let's join them and be done with this!
+```{r join ref and covariates}
+
+covariates_final <- hfi_covariates_grouped_2 %>% 
+  
+  # join 
+  left_join(sites,
+            by = 'site_number') %>% 
+  
+  # relocate site to front
+  relocate(site,
+           .after = site_number)
+```
+
+
+
+## Save grouped data
+
+Let's save this data now that it's all formatted and grouped.
+
+```{r save grouped data}
+
+write_csv(covariates_final,
+          'data/processed/srfn_covariates_grouped.csv')
+```
+
+> We are done with this script for now, we have a nice clean data set with the HFI and harvest covariates grouped how we could use them in an analysis and the VEG covariates renamed so we don't have to memorize or lookup what the numbers mean
+

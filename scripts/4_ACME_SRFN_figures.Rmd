@@ -1,0 +1,3001 @@
+---
+title: "SRFN figures"
+author: "Marissa Dyck"
+date: "2025-1-10"
+output:
+  html_document:
+    theme: journal
+    toc: true
+    toc_float: true
+  pdf_document:
+    toc: true
+---
+
+The first two chunks of this r markdown file after the r setup allow for plot zooming, but it also means that the html file must be opened in a browser to view the document properly. When it knits in RStudio the preview will appear empty but the html when opened in a browser will have all the info and you can click on each plot to Zoom in on it. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+```
+
+```{css zoom-lib-src, echo = FALSE}
+script src = "https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"
+```
+
+```{js zoom-jquery, echo = FALSE}
+ $(document).ready(function() {
+    $('body').prepend('<div class=\"zoomDiv\"><img src=\"\" class=\"zoomImg\"></div>');
+    // onClick function for all plots (img's)
+    $('img:not(.zoomImg)').click(function() {
+      $('.zoomImg').attr('src', $(this).attr('src')).css({width: '100%'});
+      $('.zoomDiv').css({opacity: '1', width: 'auto', border: '1px solid white', borderRadius: '5px', position: 'fixed', top: '50%', left: '50%', marginRight: '-50%', transform: 'translate(-50%, -50%)', boxShadow: '0px 0px 50px #888888', zIndex: '50', overflow: 'auto', maxHeight: '100%'});
+    });
+    // onClick function for zoomImg
+    $('img.zoomImg').click(function() {
+      $('.zoomDiv').css({opacity: '0', width: '0%'}); 
+    });
+  });
+```
+
+# Before you begin
+
+## Notes
+
+A few notes about this script.
+
+If you are running this make sure you download the whole SRFN (GitHub repository)[https://github.com/marissadyck/SRFN_ACME_Camera_Project] from my GitHub. This will ensure you have all the files, data, and proper folder structure you will need to run this code and associated analyses.
+
+Also make sure you open RStudio through the R project (ARFN_ACME_Camera_Project.Rproj) this will automatically set your working directory to the correct place (wherever you saved the repository and it's files) and ensure you don't have to change the file paths for some of the data.
+
+Lastly, if you are looking to adapt this code for a future year of data, you will want to ensure you have run all the code through  3_ACME_SRFN_analysis.Rmd with your data as there is much data formatting, cleaning, and restructuring that has to be done before this code will work. *Helpful note: The files are numbered in the order they are used to prep for this analysis*.
+
+If you have question please email the most recent author, currently   
+
+Marissa A. Dyck   
+Postdoctoral research fellow    
+University of Victoria    
+School of Environmental Studies     
+Email: [marissadyck17@gmail.com](marissadyck17@gmail.com)      
+
+(*update/add authors as needed*)
+
+
+## R and RStudio
+
+Before starting you should ensure you have the latest version of R and RStudio downloaded. This code was generated under R version 4.2.3 and with RStudio version 2024.04.2+764.    
+
+You can download R and RStudio [HERE](https://posit.co/download/rstudio-desktop/)   
+
+
+## R markdown
+
+This script is written in R markdown and thus uses a mix of coding markup languages and R. If you are planning to run this script with new data or make any modifications you will want to be familiar with some basics of R markdown.
+
+Below is an R markdown cheatsheet to help you get started,    
+[R markdown cheatsheet](https://www.rstudio.com/wp-content/uploads/2015/02/rmarkdown-cheatsheet.pdf)    
+
+
+## Install packages
+
+If you don't already have the following packages installed, use the code below to install them. *NOTE this will not run automatically as eval=FALSE is included in the chunk setup (i.e. I don't want it to run every time I run this code since I have the packages installed).
+
+```{r install packages, eval=FALSE}
+
+install.packages('tidyverse') 
+install.packages('ggpubr')
+install.packages('corrplot')
+install.packages('Hmisc')
+install.packages('glmmTMB')
+install.packages('MuMIn')
+install.packages('TMB', type = 'source')
+install.packages('rphylopic')
+install.packages('broom')
+install.packages('ggeffects')
+```
+
+## Load libraries
+
+Then load the packages to your library so they are usable for this session.
+
+```{r libraries, message=FALSE}
+
+library(tidyverse) # data tidying, visualization, and much more; this will load all tidyverse packages, can see complete list using tidyverse_packages()
+library(ggpubr) # make modifications to plot for publication (arrange plots)
+library(PerformanceAnalytics)    # Used to generate a correlation plot
+library(Hmisc) # used to generate histograms for all variables in data frame
+library(glmmTMB)      # Constructing GLMMs
+library(MuMIn) # for model selection
+library(rphylopic) # add animal silhouettes to graphs
+library(broom) # extracting odds ratios in a tidy format
+library(ggeffects) # for extracting predicted probabilities from glms for plotting
+```
+
+# Detection and Naive Occupancy
+
+## Load independent detection data
+
+Read in saved and cleaned **independent** detection data for the project e.g., what was generated in the 1_ACME_SRFN_camera_script_2024-12-10.Rmd.
+
+
+
+```{r data}
+
+# detection data
+# read in saved and cleaned detection data generated from the 1_ACME_SRFN_camera_script.Rmd 
+detections <- read_csv('data/processed/srfn_ind_det.csv') %>% 
+                        
+       # ensure the array, site, species, and event_id read in as factors
+       mutate_if(is.character,
+                 as.factor)
+
+# look at data structure
+str(detections)
+```
+
+
+
+## Data checks
+
+```{r check NAs}
+
+# check for NAs introduced during data merge
+summary(detections)
+
+```
+THe only NAs are in the timediff column which is what we expect since any of the first observations won't have a a value for timediff. If you are confused by this re-visit the 1_ACME_camera_script.
+
+## Summary
+
+Some summaries of the merged detection data
+
+```{r summaries}
+# create a list of focal species for filtering the data/plots
+ srfn_focal_species <- c('White-tailed deer',
+             'Black bear',
+             'Cougar',            
+             'Coyote',   
+             'Elk',
+             'Fisher',            
+             'Grey wolf',        
+             'Grizzly bear',             
+             'Lynx',              
+             'Marten',           
+             'Moose',             
+             'Mule deer',                          
+             'Red fox',
+             'Snowshoe hare')
+
+detections <- detections %>% 
+  
+  filter(species %in% srfn_focal_species)
+```
+
+
+
+
+```{r det species}
+
+detections %>% 
+  
+  # group by array and species
+  group_by(species) %>% 
+  summarise(n = n()) %>% 
+  
+  # sort from greatest to least
+  arrange(desc(n)) %>% 
+  
+  # have R print everything
+  print(n = nrow(.))
+```
+
+
+
+## Subset data
+
+We will also want to subset the data by landscape unit (LU) and generate a new data frame for each LU to use for plotting
+
+I'm not great at writing loops, so let's see how this shit goes... probably bad but who knows
+```{r det subset forloop }
+
+array_frames <- list()
+
+for (i in unique(detections$array)){
+  
+   #Subset data based on radius
+  df <- detections %>%
+    filter(array == i)
+  
+ # list of dataframes
+  array_frames <- c(array_frames, list(df))
+  
+ 
+}
+
+# inspect one data frame
+print(array_frames[[1]]) 
+```
+... I think this worked
+
+
+Now let's change names of list items using purrr, couldn't figure out how to name them in the loop, you don't necessarily need to do this because we change the names in the next section, but I like having things named
+
+```{r name array frames}
+array_frames <- array_frames %>%
+
+  purrr::set_names('agriculture',
+                   'broadleaf',
+                   'coniferous',
+                   'developed',
+                   'grassland',
+                   'shrubland',
+                   'unknown',
+                   'water') 
+
+# inspect each data frame
+head(array_frames$broadleaf)
+```
+
+
+# Detection plots
+
+## Detection data
+
+Now we can apply the same data formatting for each LUs' data frame using purrr.
+
+We want to count the number of independent detections per species per LU to use in the detection plots
+
+```{r det data}
+
+# apply the same formatting to each LU data frame using purrr map
+detection_data <- array_frames %>% 
+  
+  purrr::map(
+    ~.x %>% 
+      
+      # group by species
+      group_by(species) %>%
+      
+      # calculate a column with unique accounts of each species
+      mutate(count = n_distinct(event_id)) %>% 
+      
+      # keep just the columns we need
+      select(species, count) %>% 
+      
+      # keep only unique (distinct) rows so we should be left with one row per species, this helps with plotting later if you don't do it ggplot will try to count and plot each row it's annoying
+      distinct()) %>% 
+  
+  # set names of list objects
+  purrr::set_names(~ paste('Detections', names(array_frames)))
+
+```
+
+
+## Detection plots
+
+Now to graph independent detections for each LU using purrr, this avoids a TON of code repetition needed to plot each one individually
+
+We use `purrr::imap()` instead of `purrr::map()` because imap maintains the variable names in our list (e.g. Detections LU01, Detections LU13, etc.) which we can then use to title each plot.
+
+Within `purrr::imap()` we just paste the code we would use for a single ggplot since all the graphical elements (except the title which we change with the file name [.y]) are the same
+
+```{r det plots}
+# create object detection plots which uses the detection_data list (w/ all 4 LUs)
+detection_plots <- detection_data %>% 
+  
+  # use imap instead of map as it allows us to use .y to paste the list element names as the plot titles later
+  purrr::imap(
+    ~.x %>% 
+      
+      # now just copy and paste the ggplot code for the detection graphs
+      ggplot(.,
+             aes(x = reorder(species, count), y = count)) +
+      
+      # plot as bar graph using geom_col so we don't have to provide a y aesthetic
+      geom_col() +
+      
+      # switch the x and y axis
+      coord_flip() +
+      
+      # add the number of detections at the end of each bar
+      geom_text(aes(label = count),
+                color = "black",
+                size = 3,
+                hjust = -0.3,
+                vjust = 0.2) +
+      
+      # label x and y axis with informative titles
+      labs(x = 'Species',
+           y = 'Number of Independent (30 min) Detections') +
+      
+      # add title to plot with LU name the .y will take the name of whatever you named each list element in the detection_data list, so make sure this name is what you want on the ggtitle
+      ggtitle(.y) +
+      
+      # set the theme
+      theme_classic() +
+      theme(plot.title = element_text(hjust = 0.5)))
+
+# view plots, this will print each in it's own window so you have to scroll back in the plot viewer pane to look at each one
+detection_plots
+
+```
+
+## Save detection plots
+
+Now we want to save these plots in case we need each individual one (we will combine the detection and naive occ plots into a single figure for each LU later and use those for the OSM report, but we may want these standalone plots later so let's save them while they are here).
+
+We can save all the plots from the purrr iteration above using `purrr::imap`. imap is used instead of map because it allows us to retain the list object names (plot names) to paste as the file name with the .y command.
+
+> IMPORTANT if you are using this code for a future github repo, DO NOT use .tiff as the file extension. This will cause issues when trying to push any changes to the github repo as the files are too large to meet githubs requirements
+
+```{r save det plots, eval=FALSE}
+
+# save plots only use if needed
+purrr::imap(
+  detection_plots,
+  ~ggsave(.x,
+             file = paste0("figures/SRFN_",
+                           .y,
+                           '.jpg'), # avoid using .tiff extension in the github repo, those files are too large to push to origin
+          dpi = 600,
+          width = 11,
+          height = 9,
+          units = 'in'))
+
+```
+
+# Naive occupancy
+
+## Data
+
+We also need to alter the detection data a bit to use for naive occupancy plots. 
+
+We will use the individual LU detection data like we did before and use `purrr::map()` to apply the dame data formatting to all 4 data frames.
+
+Here we want to calculate the total number of sites in each LU, the number of sites each species was detected at in each LU and then use both those numbers to calculate naive occupancy for each species in each LU
+
+```{r occ data}
+
+# First we need to alter the data frame a bit for these plots, let's create a data frame for each LU (I couldn't figure out how to do this without assigning individual data frames for each UGH)
+
+
+# apply the same formatting to each data frame using purrr
+occupancy_data <- array_frames %>% 
+  
+  purrr::map(
+    ~.x %>% 
+      
+      # calculate the total number of sites for each LU
+      mutate(total_sites = n_distinct(site)) %>% 
+      
+      # group by species to calculate the number of sites each spp occurred at
+      group_by(species) %>% 
+  
+      # add columns to count the number of sites each spp occurred at and then the naive occupancy
+  reframe(count = n_distinct(site),
+          naive_occ = count/total_sites,
+          ind_det = n_distinct(event_id)) %>% 
+  
+    # keep just the columns we need
+  select(species, naive_occ, ind_det) %>% 
+  
+    # keep only unique (distinct) rows so we should be left with one row per species, this helps with plotting
+  distinct()) %>% 
+  
+  purrr::set_names(~ paste('Occupancy', names(array_frames)))
+```
+
+## Occupancy plots
+
+Now we can graph naive occupancy for each LU using purrr, and as with the detection plots this saves a massive amount of coding using purrr to run an iteration on the data files and produce four plots at once instead of copying and pasting code for each individually
+
+```{r occ plots}
+# create object occupancy_plots which uses the occupancy_data list (w/ all 4 LUs)
+occupancy_plots <- occupancy_data %>% 
+  
+  # use imap instead of map as it allows us to use .y to paste the list element names as the plot titles later
+  purrr::imap(
+    ~.x %>% 
+
+      # now just copy and paste the ggplot code for the occupancy graphs
+      ggplot(.,
+             aes(x = fct_reorder(species,
+                                 ind_det), # this reorders the species so they match the order of the detection plot which makes it better for viewing when the plots are arranged together in 1 figure for each LU
+                 y = naive_occ)) +
+      
+      # plot as bars using geom_col() which uses stat = 'identity', instead of geom_bar() which will count the rows in each group and plot that instead of naive occ
+      geom_col() +
+      
+      # flip x and y axis 
+      coord_flip() +
+      
+      # add text to end of bars that provides naive occ value
+      geom_text(aes(label = round(naive_occ, 2)), 
+                size = 3, 
+                hjust = -0.3, 
+                vjust = 0.2) +
+      
+      # relabel x and y axis and title
+      labs(x = 'Species',
+           y = 'Proportion of Sites With At Least One Detection') +
+      
+      # set plot title using .y (name of list object)
+      ggtitle(.y) +
+      
+      # set. theme elements
+      theme_classic()+
+      theme(plot.title = element_text(hjust = 0.5)))
+
+# view plots
+occupancy_plots
+```
+
+## Save occupancy plots
+
+As with the detection plots, we might want these individual plots later for something so we can use `purrr::imap()` to save them to the figures folder
+
+Again avoid using the .tiff extension in github
+
+```{r save occ plots, eval=FALSE}
+
+# save plots 
+purrr::imap(
+  occupancy_plots,
+  ~ggsave(.x,
+          file = paste0("figures/SRFN_",
+                        .y,
+                        '.jpg'), # avoid using .tiff extension in the github repo, those files are too large to push to origin
+          dpi = 600,
+          width = 11,
+          height = 9,
+          units = 'in'))
+
+```
+
+
+## Full study occupancy
+
+For the purposes of this project since the LUs represent different landscape types within the same study area (a bit different from LUs in the OSR project which this script was originally drafted for), let's also add a plot with naive occupancy for all LUs
+
+```{r study naive occ }
+
+naive_occ <- detections %>% 
+      
+      # calculate the total number of sites 
+      mutate(total_sites = n_distinct(site)) %>% 
+  
+  # Convert species to a factor with alphabetical levels
+  mutate(species = factor(as.character(species), 
+                          levels = sort(unique(as.character(species))))) %>% 
+      
+      # group by species to calculate the number of sites each spp occurred at
+      group_by(species) %>% 
+  
+      # add columns to count the number of sites each spp occurred at and then the naive occupancy
+  reframe(count = n_distinct(site),
+          naive_occ = count/total_sites,
+          ind_det = n_distinct(event_id)) %>% 
+  
+    # keep just the columns we need
+  select(species, naive_occ, ind_det) %>% 
+  
+    # keep only unique (distinct) rows so we should be left with one row per species, this helps with plotting
+  distinct()
+  
+```
+
+Now plot
+
+```{r naive occ plot }
+
+naive_occ_plot <-  ggplot(data = naive_occ,
+             aes(x = species,
+                 y = naive_occ)) +
+      
+      # plot as bars using geom_col() which uses stat = 'identity', instead of geom_bar() which will count the rows in each group and plot that instead of naive occ
+      geom_col() +
+      
+      # flip x and y axis 
+      coord_flip() +
+      
+      # add text to end of bars that provides naive occ value
+      geom_text(aes(label = round(naive_occ, 2)), 
+                size = 3, 
+                hjust = -0.3, 
+                vjust = 0.2) +
+      
+      # relabel x and y axis and title
+      labs(x = 'Species',
+           y = 'Naive occupancy') +
+      
+      # set. theme elements
+      theme_classic()+
+       theme(axis.text = element_text(size = 16),
+        axis.title = element_text(size = 18))
+
+naive_occ_plot
+```
+
+And lastly save this figure
+
+```{r save naive occ plot}
+
+ggsave('figures/SRFN_naive_occupancy.jpg',
+       naive_occ_plot,
+       dpi = 600,
+       width = 11,
+       height = 9,
+       units = 'in')
+```
+
+# Site data
+
+I also want to make a histogram of how many sites there were in each habitat category, will do that with the code below
+
+## Import data
+
+First we need to import the deployment fixed data from script #1
+
+```{r site histogram}
+
+deploy_fixed <- read_csv('data/processed/srfn_deploy_fixed.csv')
+
+str(deploy_fixed)
+```
+
+## Plot 
+
+Now we can have tidyverse functions count the number of different array entries (landcover types) and pipe this to ggplot to make a nice histogram
+```{r histogram}
+
+# start with data
+sites_plot <- deploy_fixed %>% 
+  
+  # add counts
+  count(array) %>% 
+  
+# pipe to ggplot to create histogram of number of sites 
+ggplot(aes(x = array,
+           y = n)) +
+  
+  # add bars for each category
+   geom_bar(stat = 'identity', 
+            linewidth = 1) +
+  
+  # add number of sites (count) above each bar
+  geom_text(aes(label = n), 
+            vjust = -0.5) + 
+  
+  # adjust axis labels
+  labs(x = 'Landscape Category', 
+       y = 'Number of sites') +
+  
+  # manually change axis labels for x-axis
+  scale_x_discrete(labels = c('Agriculture',
+                              'Broadleaf',
+                              'Coniferous',
+                              'Developed',
+                              'Grassland',
+                              'Shrubland',
+                              'Unknown',
+                              'Water')) +
+  # adjust theme
+  theme_classic()
+
+sites_plot
+```
+
+## Save plot
+
+Use ggsave to save to figures folder
+
+```{r save sites histogram}
+
+ggsave('figures/srfn_sites_histogram.jpg',
+       sites_plot,
+       dpi = 600,
+       width = 11,
+       height = 9,
+       units = 'in')
+```
+
+
+# GLM Plots
+
+First we need to provide the final data we used for the models and the top model for each species needs to be defined and fit again in this script 
+
+## Read in data
+
+
+```{r}
+prop_det_data <- readRDS('data/processed/prop_det_data.rds')
+```
+
+
+## Define and fit top models for each species
+
+
+```{r define models}
+
+# black bear
+# linear disturbance (transportation + linear energy development)
+bbear_linear <- glm(cbind(black_bear, absent_black_bear) ~ 
+                      scale(roads) +
+                      # pipeline + can't include correlated w/ roads 0.62
+                      scale(seismic_lines),
+                    data = prop_det_data$`250 meter buffer`,
+                    family = 'binomial')
+
+
+# coyote
+# overall human disturbance (can't include pipeline or wells which are correlated with roads)
+coyote_disturb <- glm(cbind(coyote, absent_coyote) ~
+                       scale(harvest_2000) +
+                       scale(harvest_pre2000) +
+                       scale(roads) +
+                       scale(seismic_lines),
+                     data = prop_det_data$`5000 meter buffer`,
+                     family = 'binomial')
+
+# grey wolf
+# linear + natural (have to pix max of 5 variables) based on the detections per habitat type I chose shrub because there were no detections there so likely avoid 
+grey_wolf_linear_nat <- glm(cbind(grey_wolf, absent_grey_wolf) ~ 
+                              scale(roads) +
+                              scale(seismic_lines) +
+                              scale(lc_mixed)  +
+                              scale(lc_shrub),
+                    data = prop_det_data$`5000 meter buffer`,
+                    family = 'binomial')
+
+# Lynx
+# polygonal disturbance (harvest + polygonal energy development + agriculture)
+lynx_poly <- glm(cbind(lynx, absent_lynx) ~ 
+                    scale(harvest_2000) +
+                    scale(harvest_pre2000) +
+                    scale(wells),
+                  data = prop_det_data$`500 meter buffer`,
+                  family = 'binomial')
+
+# Moose
+# linear disturbance (transportation + linear energy development)
+moose_linear <- glm(cbind(moose, absent_moose) ~ 
+                      scale(roads) +
+                      # pipeline + can't include correlated w/ roads 0.62
+                      scale(seismic_lines),
+                    data = prop_det_data$`500 meter buffer`,
+                    family = 'binomial')
+
+# snowshoe hare
+# overall human disturbance (limit to 5 vars)
+snowshoe_hare_disturb <- glm(cbind(snowshoe_hare, absent_snowshoe_hare) ~
+                     scale(harvest_2000) +
+                    scale(harvest_pre2000) +
+                      # scale(roads) + correlated w/ wells 0.80
+                      # pipeline + can't include correlated w/ wells 0.91
+                      scale(seismic_lines) +
+                      scale(wells),
+                    data = prop_det_data$`4000 meter buffer`,
+                    family = 'binomial')
+
+# white-tailed deer
+# Natural heterogeneity (checked how taking out broadleaf or grassland affected model results since this top model is suspiciously well performing and broadleaf was causing issues with snowshoe models)
+w_deer_nat <- glm(cbind(`white-tailed_deer`, `absent_white-tailed_deer`) ~   
+                      scale(lc_broadleaf) +
+                     scale(lc_grassland)  +
+                      scale(lc_mixed)  +
+                      scale(lc_shrub),
+                    data = prop_det_data$`4250 meter buffer`,
+                    family = 'binomial')
+```
+
+
+# Odds plots
+
+## Black bear
+
+Let's extract the odds ratios for the top black bear model so we can plot them later.
+
+```{r bear odds ratios}
+  
+  
+bbear_model_odds <- 
+  
+  # extract the coefficients and upper and lower CI
+  tidy(bbear_linear, conf.int = TRUE) %>% 
+  
+  # convert the coefficients into odds ratios
+  mutate(estimate = exp(estimate),        
+         conf.low = exp(conf.low),        
+         conf.high = exp(conf.high)) %>%  
+  
+  # rename columns
+  rename('lower' = conf.low,
+         'upper' = conf.high) %>%
+  
+  # Remove intercept for plotting
+filter(term != '(Intercept)') 
+```
+
+
+First let's get a silhouette for this graphy from phylopic
+
+```{r bear phylopic}
+
+black_bear_img <- get_phylopic(get_uuid(name = 'Ursus americanus'))
+```
+
+
+Now let's use ggplot to plot the odds ratios for each feature in the top model
+
+```{r plot bear odds}
+
+# name to save plot later
+bbear_odds_plot <- 
+# provide data and mapping aesthetics
+ggplot(bbear_model_odds, aes(x = term, 
+                          y = estimate)) +
+  
+  geom_point() +
+  
+   geom_errorbar(aes(ymin = lower, 
+                     ymax = upper),
+                width = 0.2,
+                linewidth = 0.5,
+                position = position_dodge(width = 0.9)) +
+  
+   geom_hline(yintercept = 1, linetype = "dashed") +
+  
+  labs(y = 'Odds ratio') +
+  
+  scale_x_discrete(labels = ~ str_wrap(as.character(c('Roads',
+                                                      'Seismic Lines')), 
+                                       9)) +
+  
+  # scale_x_discrete(labels = c('Roads',
+  #                             'Seismic Lines')) +
+  
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05)), 
+                     limits = c(0, 2)) +
+  
+  coord_flip() +
+  
+  add_phylopic(black_bear_img, 
+               x = 2.4,
+               y = 1.9,
+               ysize = 0.25) +
+  
+  theme_classic() +
+  
+  theme(axis.title.y = element_blank(),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+
+bbear_odds_plot
+```
+
+Save plot
+
+```{r save bear odds plot}
+
+ggsave('figures/odds_plot_blackbear.jpg',
+       bbear_odds_plot,
+       width = 10,
+       height = 8,
+       units = 'in',
+       dpi = 600)
+```
+
+Now we will do the same for each remaining species 
+
+## Coyote
+
+First we need to extract odds ratios from the model
+
+```{r coyote odds}
+
+coyote_model_odds <- 
+  
+  # extract the coefficients and upper and lower CI
+  tidy(coyote_disturb, conf.int = TRUE) %>% 
+  
+  # convert the coefficients into odds ratios
+  mutate(estimate = exp(estimate),        
+         conf.low = exp(conf.low),        
+         conf.high = exp(conf.high)) %>%  
+  
+  # rename columns
+  rename('lower' = conf.low,
+         'upper' = conf.high) %>%
+  
+  # Remove intercept for plotting
+filter(term != '(Intercept)') 
+```
+
+ Get coyote silhouette
+ 
+```{r coyote phylopic} 
+
+# this time I copied the specific phylopic uuid I want from the website in the image url
+coyote_img <- get_phylopic('d451e353-585a-4543-84e7-7ef2f90aa407')
+```
+ 
+ 
+Plot odds
+
+```{r plot coyote odds}
+# name plot 
+coyote_odds_plot <- 
+  
+  # provide data and mapping aesthetics
+  ggplot(coyote_model_odds, aes(x = term, 
+                                y = estimate)) +
+  
+  geom_point() +
+  
+  geom_errorbar(aes(ymin = lower, 
+                    ymax = upper),
+                width = 0.2,
+                linewidth = 0.5,
+                position = position_dodge(width = 0.9)) +
+  
+  geom_hline(yintercept = 1, linetype = "dashed") +
+  
+  labs(y = 'Odds ratio') +
+  
+  scale_x_discrete(labels = ~ str_wrap(as.character(c('Harvest post 2000s',
+                              'Harvest pre 2000s',
+                              'Roads',
+                              'Seismic Lines')), 
+                                       9)) +
+  
+  # scale_x_discrete(labels = c('Harvest post 2000s',
+  #                             'Harvest pre 2000s',
+  #                             'Roads',
+  #                             'Seismic Lines')) +
+  
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05)), 
+                     limits = c(0, NA)) +
+  
+  coord_flip() +
+  
+  add_phylopic(coyote_img, 
+               x = 4.2,
+               y = 1.9,
+               ysize = 0.6) +
+  
+  theme_classic() +
+  
+  theme(axis.title.y = element_blank(),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+
+coyote_odds_plot
+```
+
+Save plot
+
+```{r save coyote odds plot}
+ggsave('figures/odds_plot_coyote.jpg',
+       coyote_odds_plot,
+       width = 10,
+       height = 8,
+       units = 'in',
+       dpi = 600)
+```
+
+
+## Grey wolf
+
+
+```{r wolf odds}
+grey_wolf_model_odds <- 
+  
+  # extract the coefficients and upper and lower CI
+  tidy(grey_wolf_linear_nat, conf.int = TRUE) %>% 
+  
+  # convert the coefficients into odds ratios
+  mutate(estimate = exp(estimate),        
+         conf.low = exp(conf.low),        
+         conf.high = exp(conf.high)) %>%  
+  
+  # rename columns
+  rename('lower' = conf.low,
+         'upper' = conf.high) %>%
+  
+  # Remove intercept for plotting
+filter(term != '(Intercept)') 
+```
+
+Get wolf silhouette
+
+```{r wolf img}
+
+wolf_img <- get_phylopic('e4e306cd-73b6-4ca3-a08c-753a856f7f12')
+```
+
+Plot odss
+```{r plot wolf odds}
+
+# name to save plot later
+grey_wolf_odds_plot <- 
+  # provide data and mapping aesthetics
+  ggplot(grey_wolf_model_odds, aes(x = term, 
+                                   y = estimate)) +
+  
+  geom_point() +
+  
+  geom_errorbar(aes(ymin = lower, 
+                    ymax = upper),
+                width = 0.2,
+                linewidth = 0.5,
+                position = position_dodge(width = 0.9)) +
+  
+  geom_hline(yintercept = 1, linetype = "dashed") +
+  
+  labs(y = 'Odds ratio') +
+  
+  scale_x_discrete(labels = ~ str_wrap(as.character(c('Mixed Forest',
+                              'Shrubs',
+                              'Roads',
+                              'Seismic lines')), 
+                                       9)) +
+  
+  # scale_x_discrete(labels = c('Mixed Forest',
+  #                             'Shrubs',
+  #                             'Roads',
+  #                             'Seismic lines')) +
+  
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05)), 
+                     limits = c(0, NA)) +
+  
+  coord_flip() +
+  
+  add_phylopic(wolf_img, 
+               x = 4.2,
+               y = 2.1,
+               ysize = 0.75) +
+  
+  theme_classic() +
+  
+  theme(axis.title.y = element_blank(),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+
+grey_wolf_odds_plot
+```
+
+Save plot
+
+```{r save wolf odds plot}
+
+ggsave('figures/odds_plot_greywolf.jpg',
+       grey_wolf_odds_plot,
+       width = 10,
+       height = 8,
+       units = 'in',
+       dpi = 600)
+```
+
+## Lynx
+
+Calculate odds
+
+```{r lynx odds}
+lynx_model_odds <- 
+  
+  # extract the coefficients and upper and lower CI
+  tidy(lynx_poly, conf.int = TRUE) %>% 
+  
+  # convert the coefficients into odds ratios
+  mutate(estimate = exp(estimate),        
+         conf.low = exp(conf.low),        
+         conf.high = exp(conf.high)) %>%  
+  
+  # rename columns
+  rename('lower' = conf.low,
+         'upper' = conf.high) %>%
+  
+  # Remove intercept for plotting
+filter(term != '(Intercept)') 
+```
+
+Get lynx silhouette
+
+```{r lynx img}
+lynx_img <- get_phylopic('24f763a3-accf-44c9-9a08-71e9834047b7')
+```
+
+Plot odds
+
+```{r plot lynx odds}
+
+# name to save plot later
+lynx_odds_plot <- 
+# provide data and mapping aesthetics
+ggplot(lynx_model_odds, aes(x = term, 
+                          y = estimate)) +
+  
+  geom_point() +
+  
+   geom_errorbar(aes(ymin = lower, 
+                     ymax = upper),
+                width = 0.2,
+                linewidth = 0.5,
+                position = position_dodge(width = 0.9)) +
+  
+   geom_hline(yintercept = 1, linetype = "dashed") +
+  
+  labs(y = 'Odds ratio') +
+  
+    scale_x_discrete(labels = ~ str_wrap(as.character(c('Harvest post 2000s',
+                              'Harvest pre 2000s',
+                              'Wells')), 
+                                       9)) +
+  
+  # scale_x_discrete(labels = c('Harvest ppost 2000s',
+  #                             'Harvest pre 2000s',
+  #                             'Wells')) +
+  
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05)), 
+                     limits = c(0, NA)) +
+  
+  coord_flip() +
+  
+  add_phylopic(lynx_img, 
+               x = 3.4,
+               y = 2.2,
+               ysize = 0.5) +
+  
+  theme_classic() +
+  
+  theme(axis.title.y = element_blank(),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+
+lynx_odds_plot
+```
+Save plot
+
+```{r save lynx odds plot}
+ggsave('figures/odds_plot_lynx.jpg',
+       lynx_odds_plot,
+       width = 10,
+       height = 8,
+       units = 'in',
+       dpi = 600)
+```
+
+## Moose
+
+Calculate odds
+
+```{r moose odds}
+
+moose_model_odds <- 
+  
+  # extract the coefficients and upper and lower CI
+  tidy(moose_linear, conf.int = TRUE) %>% 
+  
+  # convert the coefficients into odds ratios
+  mutate(estimate = exp(estimate),        
+         conf.low = exp(conf.low),        
+         conf.high = exp(conf.high)) %>%  
+  
+  # rename columns
+  rename('lower' = conf.low,
+         'upper' = conf.high) %>%
+  
+  # Remove intercept for plotting
+filter(term != '(Intercept)') 
+```
+
+Get silhouette for plots
+
+```{r moose img}
+
+moose_img <- get_phylopic('74eab34a-498c-4614-aece-f02361874f79')
+```
+
+Plot odds
+
+```{r plot moose odds}
+
+# name to save plot later
+moose_odds_plot <- 
+# provide data and mapping aesthetics
+ggplot(moose_model_odds, aes(x = term, 
+                          y = estimate)) +
+  
+  geom_point() +
+  
+   geom_errorbar(aes(ymin = lower, 
+                     ymax = upper),
+                width = 0.2,
+                linewidth = 0.5,
+                position = position_dodge(width = 0.9)) +
+  
+   geom_hline(yintercept = 1, linetype = "dashed") +
+  
+  labs(y = 'Odds ratio') +
+  
+    scale_x_discrete(labels = ~ str_wrap(as.character(c('Roads',
+                              'Seismic lines')), 
+                                       9)) +
+  
+  # scale_x_discrete(labels = c('Roads',
+  #                             'Seismic lines')) +
+  
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05)), 
+                     limits = c(0, 2)) +
+  
+  coord_flip() +
+  
+  add_phylopic(moose_img, 
+               x = 2.2,
+               y = 1.9,
+               ysize = 0.5) +
+  
+  theme_classic() +
+  
+  theme(axis.title.y = element_blank(),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+
+moose_odds_plot
+```
+Save plot
+
+```{r save moose odds plot}
+
+ggsave('figures/odds_plot_moose.jpg',
+      moose_odds_plot,
+       width = 10,
+       height = 8,
+       units = 'in',
+       dpi = 600)
+```
+
+
+## Snowshoe hare
+
+
+Calculate odds
+
+```{r hare odds}
+
+hare_model_odds <- 
+  
+  # extract the coefficients and upper and lower CI
+  tidy(snowshoe_hare_disturb, conf.int = TRUE) %>% 
+  
+  # convert the coefficients into odds ratios
+  mutate(estimate = exp(estimate),        
+         conf.low = exp(conf.low),        
+         conf.high = exp(conf.high)) %>%  
+  
+  # rename columns
+  rename('lower' = conf.low,
+         'upper' = conf.high) %>%
+  
+  # Remove intercept for plotting
+filter(term != '(Intercept)') 
+```
+
+Get silhouette for plots
+```{r hare img}
+
+hare_img <- get_phylopic(get_uuid(name = 'Lepus americanus'))
+```
+
+Plot odds
+```{r hare odds plot}
+
+# name to save plot later
+hare_odds_plot <- 
+# provide data and mapping aesthetics
+ggplot(hare_model_odds, aes(x = term, 
+                          y = estimate)) +
+  
+  geom_point() +
+  
+   geom_errorbar(aes(ymin = lower, 
+                     ymax = upper),
+                width = 0.2,
+                linewidth = 0.5,
+                position = position_dodge(width = 0.9)) +
+  
+   geom_hline(yintercept = 1, linetype = "dashed") +
+  
+  labs(y = 'Odds ratio') +
+  
+      scale_x_discrete(labels = ~ str_wrap(as.character(c('Harvest post 2000s',
+                              'Harvest pre 2000s',
+                              'Seismic lines',
+                              'Wells')), 
+                                       9)) +
+  
+  # scale_x_discrete(labels = c('Harvest post 2000s',
+  #                             'Harvest pre 2000s',
+  #                             'Seismic lines',
+  #                             'Wells')) +
+  
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05)), 
+                     limits = c(0, NA)) +
+  
+  coord_flip() +
+  
+  add_phylopic(hare_img, 
+               x = 4.25,
+               y = 2.5,
+               ysize = 0.55) +
+  
+  theme_classic() +
+  
+  theme(axis.title.y = element_blank(),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+
+hare_odds_plot
+```
+Save plot
+
+```{r save hare odds plot}
+ggsave('figures/odds_plot_snowshoehare.jpg',
+       hare_odds_plot,
+       width = 10,
+       height = 8,
+       units = 'in',
+       dpi = 600)
+```
+
+
+## White-tailed deer
+
+
+```{r w_deer odds}
+
+w_deer_model_odds <- 
+  
+  # extract the coefficients and upper and lower CI
+  tidy(w_deer_nat, conf.int = TRUE) %>% 
+  
+  # convert the coefficients into odds ratios
+  mutate(estimate = exp(estimate),        
+         conf.low = exp(conf.low),        
+         conf.high = exp(conf.high)) %>%  
+  
+  # rename columns
+  rename('lower' = conf.low,
+         'upper' = conf.high) %>%
+  
+  # Remove intercept for plotting
+filter(term != '(Intercept)') 
+```
+
+Get silhouette for plots
+```{r w_deer img}
+w_deer_img <- get_phylopic('6038e80c-398d-47b2-9a69-2b9edf436f64')
+```
+
+Plot odds
+```{r w_deer odds plot}
+# name to save plot later
+w_deer_odds_plot <- 
+# provide data and mapping aesthetics
+ggplot(w_deer_model_odds, aes(x = term, 
+                          y = estimate)) +
+  
+  geom_point() +
+  
+   geom_errorbar(aes(ymin = lower, 
+                     ymax = upper),
+                width = 0.2,
+                linewidth = 0.5,
+                position = position_dodge(width = 0.9)) +
+  
+   geom_hline(yintercept = 1, linetype = "dashed") +
+  
+  labs(y = 'Odds ratio') +
+  
+    scale_x_discrete(labels = ~ str_wrap(as.character(c('Broadleaf Forest',
+                              'Grassland',
+                              'Mixed Forest',
+                              'Shrubs')), 
+                                       9)) +
+  
+  # scale_x_discrete(labels = c('Broadleaf Forest',
+  #                             'Grassland',
+  #                             'Mixed Forest',
+  #                             'Shrubs')) +
+  
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05)), 
+                     limits = c(0, NA)) +
+  
+  coord_flip() +
+  
+  add_phylopic(w_deer_img, 
+               x = 4.2,
+               y = 2,
+               ysize = 0.75) +
+  
+  theme_classic() +
+  
+  theme(axis.title.y = element_blank(),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+
+w_deer_odds_plot
+```
+Save plot
+
+```{r save deer odds plot}
+ggsave('figures/odds_plot_whitetaileddeer.jpg',
+       w_deer_odds_plot,
+       width = 10,
+       height = 8,
+       units = 'in',
+       dpi = 600)
+```
+
+# Combined odds plot
+
+First remove the axis from the plots
+```{r}
+
+# List of plots
+odds_plots <- list (bbear_odds_plot,
+          coyote_odds_plot,
+          grey_wolf_odds_plot,
+          lynx_odds_plot,
+          moose_odds_plot,
+          hare_odds_plot,
+          w_deer_odds_plot)
+
+# Remove the x-axis from each plot using purrr::map
+odds_plots_no_xaxis <- odds_plots %>% 
+  
+  map( ~ .x 
+       + theme(axis.title.x = element_blank()))
+
+```
+
+Then arrange as one plot
+```{r}
+
+figure_2 <- 
+  ggarrange(plotlist = odds_plots_no_xaxis,
+            
+            ncol = 1,
+            nrow = 7,
+            align = 'hv')
+
+
+figure_2 <-  annotate_figure(figure_2,
+                             bottom = text_grob('Odds ratio'))
+
+figure_2
+```
+
+## Save combined plot
+
+```{r}
+ggsave('figures/publication_figures/figure_2_odds.jpg',
+       figure_2,
+       width = 10,
+       height = 20,
+       units = 'in',
+       dpi = 600)
+```
+
+
+
+# Predictive plots
+
+## Black bear
+
+### Data
+
+First we need to extract predicted probabilities of species occurrence for each covariate of interest in the best fit model, and generate a tibble of that data that we can plot to interpret how each variable influences species occurrence
+
+The handy ggpredict function will do this for us, I'm combining it with purrr to iterate the function over all fixed effects so I don't have to copy and paste code for every variable in the model
+```{r bbear pred plot}
+
+# supply vector of fixed effects as they appear in model
+bbear_fes <- c('roads',
+               'seismic_lines')
+
+# Use purrr to iterate ggpredict and rename the list elements
+bbear_predicted_data <- map(set_names(bbear_fes), ~ {
+  ggpredict(bbear_linear, terms = paste0(.x, "[all]"))
+})
+
+# I viewed the full data from my environemnt but here's a printout of one variable
+head(bbear_predicted_data$roads)
+
+```
+
+
+And then we plot with ggplot, starting with seismic lines
+```{r bbear seismic plot}
+
+# and now plot with ggplot 
+
+# name plot and assign to environment
+bbear_seismic_plot <- 
+  
+  # provide data from ggpredict with x and y
+  ggplot(bbear_predicted_data$seismic_lines,
+         aes(x = x,
+             y = predicted)) +
+  
+  # plot relationship with line
+  geom_line() +
+  
+  # plot confidence with geom ribbon, must supply new aesthetics 
+  geom_ribbon(aes(ymin = conf.low,
+                  ymax = conf.high),
+              alpha = 0.4) +
+  
+  # set the axis limits so all plots go from 0-1
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  # label axis
+  labs(x = 'Proportion of seismic lines',
+       y = 'Predicted probabiity of occurrence') +
+  
+  # specify overall theme
+  theme_classic() +
+  
+  # change font size
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        axis.title.y = element_blank()) 
+  
+   # # add silhouette
+   # add_phylopic(uuid = get_uuid(name = 'Ursus americanus'), 
+   #             x = 0.028,
+   #             y = 0.9,
+   #             ysize = 0.2) 
+
+bbear_seismic_plot
+```
+
+Save plot
+
+```{r save bbear seismic plot, eval=FALSE}
+
+ggsave('figures/black_bear_seismic_lines_plot.jpg',
+       bbear_seismic_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+
+And now repeat for roads, I didn't bother creating a function or iteration for this because given the labs need to have nice names and the sillhouettes may need to be placed in different spots given the x axis for each variable this was simmpler for now
+```{r bbear roads plot}
+# name plot and assign to environment
+bbear_rds_plot <- 
+  
+  # provide data from ggpredict with x and y
+  ggplot(bbear_predicted_data$roads,
+         aes(x = x,
+             y = predicted)) +
+  
+  # plot relationship with line
+  geom_line() +
+  
+  # plot confidence with geom ribbon, must supply new aesthetics 
+  geom_ribbon(aes(ymin = conf.low,
+                  ymax = conf.high),
+              alpha = 0.4) +
+  
+  # set the axis limits so all plots go from 0-1
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  # label axis
+  labs(x = 'Proportion of roads',
+       y = 'Predicted probabiity of occurrence') +
+  
+  # specify overall theme
+  theme_classic() +
+  
+  # change font size
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14)) +
+  
+   # add silhouette
+   add_phylopic(uuid = get_uuid(name = 'Ursus americanus'), 
+               x = 0.009,
+               y = 0.95,
+               ysize = 0.15) 
+
+bbear_rds_plot
+```
+
+Save plot
+```{r save bbear rds plot, eval=FALSE}
+
+ggsave('figures/black_bear_roads_plot.jpg',
+       bbear_rds_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+### Join plots
+
+We want multiple panels in the same figure for each species. let's join all the predictive plots for black bears into one figure
+
+```{r join bbear plots}
+
+# join plots
+bbear_plot <- ggarrange(bbear_rds_plot,
+                    bbear_seismic_plot)
+
+# view
+bbear_plot
+
+
+```
+### Save final figure
+
+```{r save bbear plot}
+
+ggsave('figures/publication_figures/bbear_plot.jpg',
+       bbear_plot,
+        width = 10,
+       height = 8,
+       units = 'in',
+       dpi = 600)
+```
+
+
+
+Let's repeat this process for each species that we have enough data for.
+
+
+## Coyote
+
+### Data
+
+First extract predicted data for each covariate in model using purrr below
+
+```{r coyote pred data}
+
+# supply vector of fixed effects as they appear in model
+coyote_fes <- c('roads',
+               'seismic_lines',
+               'harvest_2000',
+               'harvest_pre2000')
+
+# Use purrr to iterate ggpredict and rename the list elements
+coyote_predicted_data <- map(set_names(coyote_fes), ~ {
+  ggpredict(coyote_disturb, terms = paste0(.x, "[all]"))
+})
+
+# I viewed the full data from my environemnt but here's a printout of one variable
+head(coyote_predicted_data$roads)
+
+```
+
+Now plot each one individually
+
+### Roads
+
+```{r coyote rds plot}
+
+# name plot and assign to environment
+coyote_rds_plot <- 
+  
+  # provide data from ggpredict with x and y
+  ggplot(coyote_predicted_data$roads,
+         aes(x = x,
+             y = predicted)) +
+  
+  # plot relationship with line
+  geom_line() +
+  
+  # plot confidence with geom ribbon, must supply new aesthetics 
+  geom_ribbon(aes(ymin = conf.low,
+                  ymax = conf.high),
+              alpha = 0.4) +
+  
+  # set the axis limits so all plots go from 0-1
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  # label axis
+  labs(x = 'Proportion of roads',
+       y = 'Predicted probabiity of occurrence') +
+  
+  # specify overall theme
+  theme_classic() +
+  
+  # change font size
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14)) 
+  
+   # # add silhouette
+   # add_phylopic(uuid = 'd451e353-585a-4543-84e7-7ef2f90aa407', 
+   #             x = 0.015,
+   #             y = 0.9,
+   #             ysize = 0.2) 
+
+coyote_rds_plot
+```
+
+Save plot
+
+```{r save coyote rds plot, eval=FALSE}
+
+ggsave('figures/coyote_roads_plot.jpg',
+       coyote_rds_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+### Seismic lines
+
+```{r coyote seismic plot}
+# name plot and assign to environment
+coyote_seismic_plot <- 
+  
+  # provide data from ggpredict with x and y
+  ggplot(coyote_predicted_data$seismic_lines,
+         aes(x = x,
+             y = predicted)) +
+  
+  # plot relationship with line
+  geom_line() +
+  
+  # plot confidence with geom ribbon, must supply new aesthetics 
+  geom_ribbon(aes(ymin = conf.low,
+                  ymax = conf.high),
+              alpha = 0.4) +
+  
+  # set the axis limits so all plots go from 0-1
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  # label axis
+  labs(x = 'Proportion of seismic lines',
+       y = 'Predicted probabiity of occurrence') +
+  
+  # specify overall theme
+  theme_classic() +
+  
+  # change font size
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        axis.title.y = element_blank()) 
+  
+   # # add silhouette
+   # add_phylopic(uuid = 'd451e353-585a-4543-84e7-7ef2f90aa407', 
+   #             x = 0.008,
+   #             y = 0.9,
+   #             ysize = 0.2) 
+
+coyote_seismic_plot
+```
+Save plot
+
+```{r save coyote seismic plot, eval=FALSE}
+
+ggsave('figures/coyote_seismic_lines_plot.jpg',
+       coyote_seismic_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+### Harvest pre 2000s
+
+```{r coyote harvest pre plot}
+# name plot and assign to environment
+coyote_harvest_pre_plot <- 
+  
+  # provide data from ggpredict with x and y
+  ggplot(coyote_predicted_data$harvest_pre2000,
+         aes(x = x,
+             y = predicted)) +
+  
+  # plot relationship with line
+  geom_line() +
+  
+  # plot confidence with geom ribbon, must supply new aesthetics 
+  geom_ribbon(aes(ymin = conf.low,
+                  ymax = conf.high),
+              alpha = 0.4) +
+  
+  # set the axis limits so all plots go from 0-1
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  # label axis
+  labs(x = 'Proportion of timber harvest (pre 2000s)',
+       y = 'Predicted probabiity of occurrence') +
+  
+  # specify overall theme
+  theme_classic() +
+  
+  # change font size
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14)) +
+  
+   # add silhouette
+   add_phylopic(uuid = 'd451e353-585a-4543-84e7-7ef2f90aa407', 
+               x = 0.05,
+               y = 0.95,
+               ysize = 0.2) 
+
+coyote_harvest_pre_plot
+```
+
+Save plot
+
+```{r save coyote harvet pre plot, eval=FALSE}
+
+ggsave('figures/coyote_harvest_pre2000_plot.jpg',
+      coyote_harvest_pre_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+
+### Harvest post 2000
+
+```{r coyote harvest post plot}
+# name plot and assign to environment
+coyote_harvest_post_plot <- 
+  
+  # provide data from ggpredict with x and y
+  ggplot(coyote_predicted_data$harvest_2000,
+         aes(x = x,
+             y = predicted)) +
+  
+  # plot relationship with line
+  geom_line() +
+  
+  # plot confidence with geom ribbon, must supply new aesthetics 
+  geom_ribbon(aes(ymin = conf.low,
+                  ymax = conf.high),
+              alpha = 0.4) +
+  
+  # set the axis limits so all plots go from 0-1
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  # label axis
+  labs(x = 'Proportion of timber harvest (post 2000s)',
+       y = 'Predicted probabiity of occurrence') +
+  
+  # specify overall theme
+  theme_classic() +
+  
+  # change font size
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        axis.title.y = element_blank()) 
+  
+   # # add silhouette
+   # add_phylopic(uuid = 'd451e353-585a-4543-84e7-7ef2f90aa407', 
+   #             x = 0.38,
+   #             y = 0.9,
+   #             ysize = 0.2) 
+
+coyote_harvest_post_plot
+```
+Save plot
+
+```{r save coyote harevst post plot, eval=FALSE}
+ggsave('figures/coyote_harvest_post2000_plot.jpg',
+      coyote_harvest_post_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+
+### Join plots
+
+We want multiple panels in the same figure for each species. let's join all the predictive plots for black bears into one figure
+
+```{r join coyote plots}
+
+# join plots
+coyote_plot <- ggarrange(coyote_harvest_pre_plot,
+                         coyote_harvest_post_plot,
+                         coyote_rds_plot,
+                         coyote_seismic_plot,
+                         
+                         nrow = 2,
+                         ncol = 2)
+
+# view
+coyote_plot
+
+
+```
+
+### Save final figure
+
+```{r save coyote plot}
+
+ggsave('figures/publication_figures/coyote_plot.jpg',
+     coyote_plot,
+        width = 10,
+       height = 8,
+       units = 'in',
+       dpi = 600)
+```
+
+
+## Grey wolf
+
+### Data
+
+Use code from above to get pred data for each variable 
+
+```{r wolf pred data}
+# supply vector of fixed effects as they appear in model
+wolf_fes <- c('roads',
+              'seismic_lines',
+              'lc_shrub',
+              'lc_mixed')
+
+# Use purrr to iterate ggpredict and rename the list elements
+wolf_predicted_data <- map(set_names(wolf_fes), ~ {
+  ggpredict(grey_wolf_linear_nat, terms = paste0(.x, "[all]"))
+})
+
+# I viewed the full data from my environment but here's a printout of one variable
+head(wolf_predicted_data$roads)
+```
+
+
+### Seismic lines
+
+Now plot results for each fixed effect starting with seismic lines
+
+```{r wolf seismic plot}
+
+# name plot and assign to environment
+wolf_seismic_plot <- 
+  
+  # provide data from ggpredict with x and y
+  ggplot(wolf_predicted_data$seismic_lines,
+         aes(x = x,
+             y = predicted)) +
+  
+  # plot relationship with line
+  geom_line() +
+  
+  # plot confidence with geom ribbon, must supply new aesthetics 
+  geom_ribbon(aes(ymin = conf.low,
+                  ymax = conf.high),
+              alpha = 0.4) +
+  
+  # set the axis limits so all plots go from 0-1
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  # label axis
+  labs(x = 'Proportion of seismic lines',
+       y = 'Predicted probabiity of occurrence') +
+  
+  # specify overall theme
+  theme_classic() +
+  
+  # change font size
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        axis.title.y = element_blank()) 
+  
+   # # add silhouette
+   # add_phylopic(uuid = 'e4e306cd-73b6-4ca3-a08c-753a856f7f12', 
+   #             x = 0.0085,
+   #             y = 0.9,
+   #             ysize = 0.2) 
+
+wolf_seismic_plot
+
+```
+Save plot
+
+```{r save wolf seismic plot, eval=FALSE}
+
+ggsave('figures/grey_wolf_seismic_lines_plot.jpg',
+       wolf_seismic_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+
+### Roads
+
+```{r wolf roads plot}
+
+
+# name plot and assign to environment
+wolf_rds_plot <- 
+  
+  # provide data from ggpredict with x and y
+  ggplot(wolf_predicted_data$roads,
+         aes(x = x,
+             y = predicted)) +
+  
+  # plot relationship with line
+  geom_line() +
+  
+  # plot confidence with geom ribbon, must supply new aesthetics 
+  geom_ribbon(aes(ymin = conf.low,
+                  ymax = conf.high),
+              alpha = 0.4) +
+  
+  # set the axis limits so all plots go from 0-1
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  # label axis
+  labs(x = 'Proportion of roads',
+       y = 'Predicted probabiity of occurrence') +
+  
+  # specify overall theme
+  theme_classic() +
+  
+  # change font size
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14)) 
+  
+   # # add silhouette
+   # add_phylopic(uuid = 'e4e306cd-73b6-4ca3-a08c-753a856f7f12', 
+   #             x = 0.015,
+   #             y = 0.9,
+   #             ysize = 0.2) 
+
+wolf_rds_plot
+```
+
+Save plot
+
+```{r save wolf rds plot, eval=FALSE}
+
+ggsave('figures/grey_wolf_roads_plot.jpg',
+       wolf_rds_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+
+### Shrubs
+
+```{r wolf shrub plot}
+# name plot and assign to environment
+wolf_shrub_plot <- 
+  
+  # provide data from ggpredict with x and y
+  ggplot(wolf_predicted_data$lc_shrub,
+         aes(x = x,
+             y = predicted)) +
+  
+  # plot relationship with line
+  geom_line() +
+  
+  # plot confidence with geom ribbon, must supply new aesthetics 
+  geom_ribbon(aes(ymin = conf.low,
+                  ymax = conf.high),
+              alpha = 0.4) +
+  
+  # set the axis limits so all plots go from 0-1
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  # label axis
+  labs(x = 'Proportion of shrub',
+       y = 'Predicted probabiity of occurrence') +
+  
+  # specify overall theme
+  theme_classic() +
+  
+  # change font size
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        axis.title.y = element_blank()) 
+  
+   # add silhouette
+   # add_phylopic(uuid = 'e4e306cd-73b6-4ca3-a08c-753a856f7f12', 
+   #             x = 0.7,
+   #             y = 0.9,
+   #             ysize = 0.2) 
+
+wolf_shrub_plot
+
+```
+Save plot
+
+```{r save wolf shrub plot, eval=FALSE}
+ggsave('figures/grey_wolf_shrub_plot.jpg',
+       wolf_shrub_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+### Mixed forest
+
+```{r wolf mixed plot}
+# name plot and assign to environment
+wolf_mixed_plot <- 
+  
+  # provide data from ggpredict with x and y
+  ggplot(wolf_predicted_data$lc_mixed,
+         aes(x = x,
+             y = predicted)) +
+  
+  # plot relationship with line
+  geom_line() +
+  
+  # plot confidence with geom ribbon, must supply new aesthetics 
+  geom_ribbon(aes(ymin = conf.low,
+                  ymax = conf.high),
+              alpha = 0.4) +
+  
+  # set the axis limits so all plots go from 0-1
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  # label axis
+  labs(x = 'Proportion of mixed forest',
+       y = 'Predicted probabiity of occurrence') +
+  
+  # specify overall theme
+  theme_classic() +
+  
+  # change font size
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14)) +
+  
+   # add silhouette
+   add_phylopic(uuid = 'e4e306cd-73b6-4ca3-a08c-753a856f7f12', 
+               x = 0.015,
+               y = 0.92,
+               ysize = 0.3) 
+
+wolf_mixed_plot
+
+```
+Save plot
+
+```{r save wolf mixed plot, eval=FALSE}
+ggsave('figures/grey_wolf_mixed_plot.jpg',
+       wolf_mixed_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+### Join plots
+
+```{r join wolf plots}
+
+wolf_plot <- ggarrange(wolf_mixed_plot,
+                        wolf_shrub_plot,
+                        wolf_rds_plot,
+                        wolf_seismic_plot,
+                        
+                        nrow = 2,
+                        ncol = 2)
+
+wolf_plot
+```
+
+### Save final figure
+
+```{r save wolf plot}
+
+ggsave('figures/publication_figures/wolf_plot.jpg',
+       wolf_plot,
+       width = 10,
+       height = 8,
+       units = 'in',
+       dpi = 600)
+```
+
+
+## Lynx
+
+### data
+
+```{r get lynx pred data}
+
+# supply vector of fixed effects as they appear in model
+lynx_fes <- c('wells',
+              'harvest_pre2000',
+               'harvest_2000')
+
+# Use purrr to iterate ggpredict and rename the list elements
+lynx_predicted_data <- map(set_names(lynx_fes), ~ {
+  ggpredict(lynx_poly, terms = paste0(.x, "[all]"))
+})
+
+# I viewed the full data from my environemnt but here's a printout of one variable
+head(lynx_predicted_data$wells)
+```
+
+
+### Wells
+
+```{r lynx well plot}
+# name plot and assign to environment
+lynx_well_plot <- 
+  
+  # provide data from ggpredict with x and y
+  ggplot(lynx_predicted_data$wells,
+         aes(x = x,
+             y = predicted)) +
+  
+  # plot relationship with line
+  geom_line() +
+  
+  # plot confidence with geom ribbon, must supply new aesthetics 
+  geom_ribbon(aes(ymin = conf.low,
+                  ymax = conf.high),
+              alpha = 0.4) +
+  
+  # set the axis limits so all plots go from 0-1
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  # label axis
+  labs(x = 'Proportion of wells',
+       y = 'Predicted probabiity of occurrence') +
+  
+  # specify overall theme
+  theme_classic() +
+  
+  # change font size
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14)) 
+  
+   # # add silhouette
+   # add_phylopic(uuid = '24f763a3-accf-44c9-9a08-71e9834047b7', 
+   #             x = 0.06,
+   #             y = 0.9,
+   #             ysize = 0.2) 
+
+lynx_well_plot
+```
+Save plot
+
+```{r save lynx well plot, eval=FALSE}
+ggsave('figures/lynx_well_plot.jpg',
+      lynx_well_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+
+### Harvest pre 2000s
+
+```{r lynx harvest pre plot}
+# name plot and assign to environment
+lynx_harvest_pre_plot <- 
+  
+  # provide data from ggpredict with x and y
+  ggplot(lynx_predicted_data$harvest_pre2000,
+         aes(x = x,
+             y = predicted)) +
+  
+  # plot relationship with line
+  geom_line() +
+  
+  # plot confidence with geom ribbon, must supply new aesthetics 
+  geom_ribbon(aes(ymin = conf.low,
+                  ymax = conf.high),
+              alpha = 0.4) +
+  
+  # set the axis limits so all plots go from 0-1
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  # label axis
+  labs(x = 'Proportion of timber harvest (pre 2000s)',
+       y = 'Predicted probabiity of occurrence') +
+  
+  # specify overall theme
+  theme_classic() +
+  
+  # change font size
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14)) +
+  
+   # add silhouette
+   add_phylopic(uuid = '24f763a3-accf-44c9-9a08-71e9834047b7', 
+               x = 0.05,
+               y = 0.95,
+               ysize = 0.25) 
+
+lynx_harvest_pre_plot
+```
+Save plot
+
+```{r save lynx harvest pre plot, eval=FALSE}
+
+ggsave('figures/lynx_harvest_pre2000_plot.jpg',
+      lynx_harvest_pre_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+
+### Harvest post 2000s
+
+```{r lynx harvest post plot}
+# name plot and assign to environment
+lynx_harvest_post_plot <- 
+  
+  # provide data from ggpredict with x and y
+  ggplot(lynx_predicted_data$harvest_2000,
+         aes(x = x,
+             y = predicted)) +
+  
+  # plot relationship with line
+  geom_line() +
+  
+  # plot confidence with geom ribbon, must supply new aesthetics 
+  geom_ribbon(aes(ymin = conf.low,
+                  ymax = conf.high),
+              alpha = 0.4) +
+  
+  # set the axis limits so all plots go from 0-1
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  # label axis
+  labs(x = 'Proportion of timber harvest (post 2000s)',
+       y = 'Predicted probabiity of occurrence') +
+  
+  # specify overall theme
+  theme_classic() +
+  
+  # change font size
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        axis.title.y = element_blank()) 
+  
+   # # add silhouette
+   # add_phylopic(uuid = '24f763a3-accf-44c9-9a08-71e9834047b7', 
+   #             x = 0.55,
+   #             y = 0.9,
+   #             ysize = 0.2) 
+
+lynx_harvest_post_plot
+
+```
+Save plot
+
+```{r save lynx post plot, eval=FALSE}
+
+ggsave('figures/lynx_harvest_post2000_plot.jpg',
+      lynx_harvest_post_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+## Join plots
+
+```{r join lynx plots}
+
+lynx_plot <- ggarrange(lynx_harvest_pre_plot,
+                       lynx_harvest_post_plot,
+                       lynx_well_plot,
+                       
+                       nrow = 2,
+                       ncol = 2)
+
+lynx_plot
+```
+
+### Save final figure
+
+```{r save lynx plot}
+
+ggsave('figures/publication_figures/lynx_plot.jpg',
+       lynx_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+
+## Moose
+
+### Data
+
+```{r moose pred data}
+# supply vector of fixed effects as they appear in model
+moose_fes <- c('roads',
+               'seismic_lines')
+
+# Use purrr to iterate ggpredict and rename the list elements
+moose_predicted_data <- map(set_names(moose_fes), ~ {
+  ggpredict(moose_linear, terms = paste0(.x, "[all]"))
+})
+
+# I viewed the full data from my environemnt but here's a printout of one variable
+head(moose_predicted_data$roads)
+```
+
+
+### Seismic lines
+
+```{r moose seismic plot}
+# name plot and assign to environment
+moose_seismic_plot <- 
+  
+  # provide data from ggpredict with x and y
+  ggplot(moose_predicted_data$seismic_lines,
+         aes(x = x,
+             y = predicted)) +
+  
+  # plot relationship with line
+  geom_line() +
+  
+  # plot confidence with geom ribbon, must supply new aesthetics 
+  geom_ribbon(aes(ymin = conf.low,
+                  ymax = conf.high),
+              alpha = 0.4) +
+  
+  # set the axis limits so all plots go from 0-1
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  # label axis
+  labs(x = 'Proportion of seismic lines',
+       y = 'Predicted probabiity of occurrence') +
+  
+  # specify overall theme
+  theme_classic() +
+  
+  # change font size
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        axis.title.y = element_blank()) 
+  
+   # # add silhouette
+   # add_phylopic(uuid = '74eab34a-498c-4614-aece-f02361874f79', 
+   #             x = 0.028,
+   #             y = 0.9,
+   #             ysize = 0.2) 
+
+moose_seismic_plot
+```
+Save plot
+
+```{r save moose seismic plot, eval=FALSE}
+ggsave('figures/moose_seismic_lines_plot.jpg',
+      moose_seismic_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+
+### Roads
+
+```{r moose rds plot}
+# name plot and assign to environment
+moose_rds_plot <- 
+  
+  # provide data from ggpredict with x and y
+  ggplot(moose_predicted_data$roads,
+         aes(x = x,
+             y = predicted)) +
+  
+  # plot relationship with line
+  geom_line() +
+  
+  # plot confidence with geom ribbon, must supply new aesthetics 
+  geom_ribbon(aes(ymin = conf.low,
+                  ymax = conf.high),
+              alpha = 0.4) +
+  
+  # set the axis limits so all plots go from 0-1
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  # label axis
+  labs(x = 'Proportion of roads',
+       y = 'Predicted probabiity of occurrence') +
+  
+  # specify overall theme
+  theme_classic() +
+  
+  # change font size
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14)) +
+  
+   # add silhouette
+   add_phylopic(uuid = '74eab34a-498c-4614-aece-f02361874f79', 
+               x = 0.005,
+               y = 0.96,
+               ysize = 0.16) 
+
+moose_rds_plot
+```
+
+Save plot
+
+```{r sace moose rds plot, eval=FALSE}
+ggsave('figures/moose_roads_plot.jpg',
+      moose_rds_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+### Join plots
+
+```{r join moose plots}
+
+moose_plot <- ggarrange(moose_rds_plot,
+                        moose_seismic_plot,
+                        
+                        nrow = 1,
+                        ncol = 2)
+
+moose_plot
+```
+
+### Save final figure
+
+```{r save moose plot}
+ggsave('figures/publication_figures/moose_plot.jpg',
+       moose_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+
+
+## Snowshoe hare
+
+### Data
+
+```{r pred data hare}
+
+# supply vector of fixed effects as they appear in model
+hare_fes <- c('wells',
+               'seismic_lines',
+               'harvest_2000',
+               'harvest_pre2000')
+
+# Use purrr to iterate ggpredict and rename the list elements
+hare_predicted_data <- map(set_names(hare_fes), ~ {
+  ggpredict(snowshoe_hare_disturb, terms = paste0(.x, "[all]"))
+})
+
+# I viewed the full data from my environment but here's a printout of one variable
+head(hare_predicted_data$wells)
+```
+
+### Wells
+
+```{r hare wells plot}
+
+# and now plot with ggplot 
+
+# name plot and assign to environment
+hare_well_plot <- 
+  
+  # provide data from ggpredict with x and y
+  ggplot(hare_predicted_data$wells,
+         aes(x = x,
+             y = predicted)) +
+  
+  # plot relationship with line
+  geom_line() +
+  
+  # plot confidence with geom ribbon, must supply new aesthetics 
+  geom_ribbon(aes(ymin = conf.low,
+                  ymax = conf.high),
+              alpha = 0.4) +
+  
+  # set the axis limits so all plots go from 0-1
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  # label axis
+  labs(x = 'Proportion of wells',
+       y = 'Predicted probabiity of occurrence') +
+  
+  # specify overall theme
+  theme_classic() +
+  
+  # change font size
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        axis.title.y = element_blank()) 
+  
+   # # add silhouette
+   # add_phylopic(uuid =  get_uuid(name = 'Lepus americanus'),
+   #             x = 0.03,
+   #             y = 0.9,
+   #             ysize = 0.2) 
+
+hare_well_plot
+```
+Save plot
+
+```{r save hare well plot, eval=FALSE}
+
+ggsave('figures/snowshoehare_wells_plot.jpg',
+       hare_well_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+
+### Seismic lines
+
+```{r hare seismic plot}
+# name plot and assign to environment
+hare_seismic_plot <- 
+  
+  # provide data from ggpredict with x and y
+  ggplot(hare_predicted_data$seismic_lines,
+         aes(x = x,
+             y = predicted)) +
+  
+  # plot relationship with line
+  geom_line() +
+  
+  # plot confidence with geom ribbon, must supply new aesthetics 
+  geom_ribbon(aes(ymin = conf.low,
+                  ymax = conf.high),
+              alpha = 0.4) +
+  
+  # set the axis limits so all plots go from 0-1
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  # label axis
+  labs(x = 'Proportion of seismic lines',
+       y = 'Predicted probabiity of occurrence') +
+  
+  # specify overall theme
+  theme_classic() +
+  
+  # change font size
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14)) 
+  
+   # # add silhouette
+   # add_phylopic(uuid =  get_uuid(name = 'Lepus americanus'),
+   #             x = 0.009,
+   #             y = 0.9,
+   #             ysize = 0.2) 
+
+hare_seismic_plot
+```
+Save plot
+
+```{r save hare seismic plot, eval=FALSE}
+ggsave('figures/snowshoehare_seismic_plot.jpg',
+       hare_seismic_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+
+### Harvest pre 2000s
+
+```{r hare harvest pre plot}
+# name plot and assign to environment
+hare_harvest_pre_plot <- 
+  
+  # provide data from ggpredict with x and y
+  ggplot(hare_predicted_data$harvest_pre2000,
+         aes(x = x,
+             y = predicted)) +
+  
+  # plot relationship with line
+  geom_line() +
+  
+  # plot confidence with geom ribbon, must supply new aesthetics 
+  geom_ribbon(aes(ymin = conf.low,
+                  ymax = conf.high),
+              alpha = 0.4) +
+  
+  # set the axis limits so all plots go from 0-1
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  # label axis
+  labs(x = 'Proportion of timber harvest (pre 2000s)',
+       y = 'Predicted probabiity of occurrence') +
+  
+  # specify overall theme
+  theme_classic() +
+  
+  # change font size
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14)) +
+  
+   # add silhouette
+   add_phylopic(uuid =  get_uuid(name = 'Lepus americanus'),
+               x = 0.01,
+               y = 0.95,
+               ysize = 0.2) 
+
+hare_harvest_pre_plot
+```
+
+Save plot
+
+```{r save hare harvest pre plot, eval=FALSE}
+ggsave('figures/snowshoehare_harvest_pre200s_plot.jpg',
+       hare_harvest_pre_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+
+### Harvest post 2000s
+
+```{r hare harvest post plot}
+
+# name plot and assign to environment
+hare_harvest_post_plot <- 
+  
+  # provide data from ggpredict with x and y
+  ggplot(hare_predicted_data$harvest_2000,
+         aes(x = x,
+             y = predicted)) +
+  
+  # plot relationship with line
+  geom_line() +
+  
+  # plot confidence with geom ribbon, must supply new aesthetics 
+  geom_ribbon(aes(ymin = conf.low,
+                  ymax = conf.high),
+              alpha = 0.4) +
+  
+  # set the axis limits so all plots go from 0-1
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  # label axis
+  labs(x = 'Proportion of timber harvest (post 2000s)',
+       y = 'Predicted probabiity of occurrence') +
+  
+  # specify overall theme
+  theme_classic() +
+  
+  # change font size
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        axis.title.y = element_blank()) 
+  
+   # # add silhouette
+   # add_phylopic(uuid =  get_uuid(name = 'Lepus americanus'),
+   #             x = 0.43,
+   #             y = 0.9,
+   #             ysize = 0.2) 
+
+hare_harvest_post_plot
+```
+Save plot
+
+```{r save hare post plot, eval=FALSE}
+
+ggsave('figures/snowshoehare_harvest_post200s_plot.jpg',
+       hare_harvest_post_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+### Join plots
+
+```{r join hare plots}
+
+hare_plot <- ggarrange(hare_harvest_pre_plot,
+                        hare_harvest_post_plot,
+                        hare_seismic_plot,
+                        hare_well_plot,
+                        
+                        nrow = 2, 
+                        ncol = 2)
+
+hare_plot
+```
+
+
+### Save final figure
+
+```{r save hare plot}
+ggsave('figures/publication_figures/snowshoe_hare_plot.jpg',
+       hare_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+
+## White-tailed deer
+
+### Data
+
+```{r w_deer pred data, warning=FALSE}
+# supply vector of fixed effects as they appear in model
+w_deer_fes <- c('lc_broadleaf',
+               'lc_grassland',
+               'lc_mixed',
+               'lc_shrub')
+
+# Use purrr to iterate ggpredict and rename the list elements
+w_deer_predicted_data <- map(set_names(w_deer_fes), ~ {
+  ggpredict(w_deer_nat, terms = paste0(.x, "[all]"))
+})
+
+# I viewed the full data from my environemnt but here's a printout of one variable
+head(w_deer_predicted_data$lc_broadleaf)
+```
+
+
+### Broadleaf forest
+
+```{r w_deer broadleaf}
+w_deer_broadleaf_plot <- 
+  
+  # provide data from ggpredict with x and y
+  ggplot(w_deer_predicted_data$lc_broadleaf,
+         aes(x = x,
+             y = predicted)) +
+  
+  # plot relationship with line
+  geom_line() +
+  
+  # plot confidence with geom ribbon, must supply new aesthetics 
+  geom_ribbon(aes(ymin = conf.low,
+                  ymax = conf.high),
+              alpha = 0.4) +
+  
+  # set the axis limits so all plots go from 0-1
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  # label axis
+  labs(x = 'Proportion of broadleaf forest',
+       y = 'Predicted probabiity of occurrence') +
+  
+  # specify overall theme
+  theme_classic() +
+  
+  # change font size
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14)) +
+  
+   # add silhouette
+   add_phylopic(uuid = '6038e80c-398d-47b2-9a69-2b9edf436f64', 
+               x = 0.05,
+               y = 0.92,
+               ysize = 0.26) 
+
+w_deer_broadleaf_plot
+
+```
+Save plot
+
+```{r save w_deer broadleaf plot, eval=FALSE}
+ggsave('figures/whitetaileddeer_broadleaf_plot.jpg',
+       w_deer_broadleaf_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+
+### Grassland
+
+```{r w_deer grassland plot}
+w_deer_grass_plot <- 
+  
+  # provide data from ggpredict with x and y
+  ggplot(w_deer_predicted_data$lc_grassland,
+         aes(x = x,
+             y = predicted)) +
+  
+  # plot relationship with line
+  geom_line() +
+  
+  # plot confidence with geom ribbon, must supply new aesthetics 
+  geom_ribbon(aes(ymin = conf.low,
+                  ymax = conf.high),
+              alpha = 0.4) +
+  
+  # set the axis limits so all plots go from 0-1
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  # label axis
+  labs(x = 'Proportion of grassland',
+       y = 'Predicted probabiity of occurrence') +
+  
+  # specify overall theme
+  theme_classic() +
+  
+  # change font size
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        axis.title.y = element_blank()) 
+  
+   # # add silhouette
+   # add_phylopic(uuid = '6038e80c-398d-47b2-9a69-2b9edf436f64', 
+   #             x = 0.12,
+   #             y = 0.95,
+   #             ysize = 0.2) 
+
+w_deer_grass_plot
+```
+Save plot
+
+```{r save w_deer grass plot, eval=FALSE}
+ggsave('figures/whitetaileddeer_grassland_plot.jpg',
+       w_deer_grass_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+
+### Mixed forest
+
+```{r w_deer mixed plot }
+w_deer_mixed_plot <- 
+  
+  # provide data from ggpredict with x and y
+  ggplot(w_deer_predicted_data$lc_mixed,
+         aes(x = x,
+             y = predicted)) +
+  
+  # plot relationship with line
+  geom_line() +
+  
+  # plot confidence with geom ribbon, must supply new aesthetics 
+  geom_ribbon(aes(ymin = conf.low,
+                  ymax = conf.high),
+              alpha = 0.4) +
+  
+  # set the axis limits so all plots go from 0-1
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  # label axis
+  labs(x = 'Proportion of mixed forest',
+       y = 'Predicted probabiity of occurrence') +
+  
+  # specify overall theme
+  theme_classic() +
+  
+  # change font size
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14)) 
+  
+   # # add silhouette
+   # add_phylopic(uuid = '6038e80c-398d-47b2-9a69-2b9edf436f64', 
+   #             x = 0.125,
+   #             y = 0.95,
+   #             ysize = 0.2) 
+
+w_deer_mixed_plot
+```
+Save plot
+
+```{r save w_deer mixed plot, eval=FALSE}
+ggsave('figures/whitetaileddeer_mixed_plot.jpg',
+       w_deer_mixed_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+
+### Shrubs
+
+```{r w_deer shrub plot}
+w_deer_shrub_plot <- 
+  
+  # provide data from ggpredict with x and y
+  ggplot(w_deer_predicted_data$lc_shrub,
+         aes(x = x,
+             y = predicted)) +
+  
+  # plot relationship with line
+  geom_line() +
+  
+  # plot confidence with geom ribbon, must supply new aesthetics 
+  geom_ribbon(aes(ymin = conf.low,
+                  ymax = conf.high),
+              alpha = 0.4) +
+  
+  # set the axis limits so all plots go from 0-1
+  scale_y_continuous(limits = c(0, 1)) +
+  
+  # label axis
+  labs(x = 'Proportion of shrub',
+       y = 'Predicted probabiity of occurrence') +
+  
+  # specify overall theme
+  theme_classic() +
+  
+  # change font size
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        axis.title.y = element_blank()) 
+  
+   # # add silhouette
+   # add_phylopic(uuid = '6038e80c-398d-47b2-9a69-2b9edf436f64', 
+   #             x = 0.7,
+   #             y = 0.95,
+   #             ysize = 0.2) 
+
+w_deer_shrub_plot
+```
+
+Save plot
+
+```{r save w_deer shrub plot, eval=FALSE}
+ggsave('figures/whitetaileddeer_shrub_plot.jpg',
+       w_deer_shrub_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+### Join plots
+
+```{r join deer plots}
+
+deer_plot <- ggarrange(w_deer_broadleaf_plot,
+                       w_deer_grass_plot,
+                       w_deer_mixed_plot,
+                       w_deer_shrub_plot,
+                       
+                       nrow = 2,
+                       ncol = 2)
+
+# view plot
+deer_plot
+```
+
+
+### Save final figure
+
+```{r save deer plot}
+ggsave('figures/publication_figures/deer_plot.jpg',
+       deer_plot,
+       width = 14,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```

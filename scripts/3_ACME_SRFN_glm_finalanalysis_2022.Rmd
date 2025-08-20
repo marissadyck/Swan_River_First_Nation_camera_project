@@ -1,0 +1,2339 @@
+---
+title: "SRFN project analysis"
+author: "Marissa Dyck"
+date: "2025-1-10"
+output:
+  html_document:
+    theme: journal
+    toc: true
+    toc_float: true
+  pdf_document:
+    toc: true
+---
+
+The first two chunks of this r markdown file after the r setup allow for plot zooming, but it also means that the html file must be opened in a browser to view the document properly. When it knits in RStudio the preview will appear empty but the html when opened in a browser will have all the info and you can click on each plot to Zoom in on it. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+```
+
+```{css zoom-lib-src, echo = FALSE}
+script src = "https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"
+```
+
+```{js zoom-jquery, echo = FALSE}
+ $(document).ready(function() {
+    $('body').prepend('<div class=\"zoomDiv\"><img src=\"\" class=\"zoomImg\"></div>');
+    // onClick function for all plots (img's)
+    $('img:not(.zoomImg)').click(function() {
+      $('.zoomImg').attr('src', $(this).attr('src')).css({width: '100%'});
+      $('.zoomDiv').css({opacity: '1', width: 'auto', border: '1px solid white', borderRadius: '5px', position: 'fixed', top: '50%', left: '50%', marginRight: '-50%', transform: 'translate(-50%, -50%)', boxShadow: '0px 0px 50px #888888', zIndex: '50', overflow: 'auto', maxHeight: '100%'});
+    });
+    // onClick function for zoomImg
+    $('img.zoomImg').click(function() {
+      $('.zoomDiv').css({opacity: '0', width: '0%'}); 
+    });
+  });
+```
+
+# Before you begin
+
+## Notes
+
+A few notes about this script.
+
+If you are running this make sure you download the whole SRFN (GitHub repository)[https://github.com/marissadyck/SRFN_ACME_Camera_Project] from my GitHub. This will ensure you have all the files, data, and proper folder structure you will need to run this code and associated analyses.
+
+Also make sure you open RStudio through the R project (ARFN_ACME_Camera_Project.Rproj) this will automatically set your working directory to the correct place (wherever you saved the repository and it's files) and ensure you don't have to change the file paths for some of the data.
+
+Lastly, if you are looking to adapt this code for a future year of data, you will want to ensure you have run all the code through  2_ACME_SRFN_landscape_covariate_exploration_script.Rmd with your data as there is much data formatting, cleaning, and restructuring that has to be done before this code will work. *Helpful note: The files are numbered in the order they are used to prep for this analysis*.
+
+If you have question please email the most recent author, currently   
+
+Marissa A. Dyck   
+Postdoctoral research fellow    
+University of Victoria    
+School of Environmental Studies     
+Email: [marissadyck17@gmail.com](marissadyck17@gmail.com)      
+
+
+## R and RStudio
+
+Before starting you should ensure you have the latest version of R and RStudio downloaded. This code was generated under R version 4.2.3 and with RStudio version 2024.04.2+764.    
+
+You can download R and RStudio [HERE](https://posit.co/download/rstudio-desktop/)   
+
+
+## R markdown
+
+This script is written in R markdown and thus uses a mix of coding markup languages and R. If you are planning to run this script with new data or make any modifications you will want to be familiar with some basics of R markdown.
+
+Below is an R markdown cheatsheet to help you get started,    
+[R markdown cheatsheet](https://www.rstudio.com/wp-content/uploads/2015/02/rmarkdown-cheatsheet.pdf)    
+
+
+## Install packages
+
+If you don't already have the following packages installed, use the code below to install them. *NOTE this will not run automatically as eval=FALSE is included in the chunk setup (i.e. I don't want it to run every time I run this code since I have the packages installed).
+
+```{r install packages, eval=FALSE}
+
+install.packages('tidyverse') 
+install.packages('corrplot')
+install.packages('Hmisc')
+install.packages('glmmTMB')
+install.packages('MuMIn')
+install.packages('TMB', type = 'source')
+install.packages('lme4')
+install.packages('car')
+```
+
+## Load libraries
+
+Then load the packages to your library so they are usable for this session.
+
+```{r libraries, message=FALSE}
+
+library(tidyverse) # data tidying, visualization, and much more; this will load all tidyverse packages, can see complete list using tidyverse_packages()
+library(PerformanceAnalytics)    # Used to generate a correlation plot
+library(Hmisc) # used to generate histograms for all variables in data frame
+library(glmmTMB)      # Constructing GLMMs
+library(MuMIn) # for model selection
+library(lme4) # constructing generalized linear mixed effects models
+library(car) # used for calculating variance inflation factor (VIF) to assess model fit
+
+```
+
+
+# Summary info
+
+I've added this short section, while not directly related to the analysis, will provide some summary statistics in one convenient location to report in results etc. 
+
+## Images of wildlife
+
+First let's read in the cleaned raw data with all the timelapse images and drop any with no species id
+```{r import raw timelapse}
+
+timelapse <- read_csv('data/raw/srfn_timelapse_data.csv',
+                      
+                      col_types = cols(species = col_factor())) %>% 
+  
+  drop_na(species)
+```
+
+The number of observations of this timelapse object gives us the total non-blank images from the study
+```{r}
+levels(timelapse$species)
+```
+Then we can filter to how many of those were identified to species as mammals
+
+```{r}
+mammals <- c('White-tailed deer',
+             'Moose',
+             'Black bear',
+             'Mule deer',
+             'Elk',
+             'Snowshoe hare',
+             'Grizzly bear',
+             'Caribou',
+             'Coyote',
+             'Fisher',
+             'Grey wolf',
+             'Lynx',
+             'Red fox',
+             'White-tailed deer',
+             'Red squirrel',
+             'Cougar')
+
+timelapse_mammals <-  timelapse %>% 
+  
+  filter(species %in% mammals) %>% 
+  
+  droplevels()
+
+# check the levels
+levels(timelapse_mammals$species)
+  
+
+
+# Now get summaries of each mammal
+ timelapse_mammals %>% 
+   group_by(species) %>% 
+  
+  summarise(count = n()) %>% 
+   
+   arrange(desc(count))
+
+
+
+```
+
+## Independent detections 
+
+
+# Analysis prep
+
+Now we can start the analysis prep.
+
+First we need to read in the proportional detection (response metrics) and covariate (explanatory metrics) data files for all 6 LUs (fiscal years 2021-2022 and 2022-2023)
+
+
+## Response metrics
+
+We have multiple response metric files that were generated in script #1, since there were a few very rare species we want to look at, let's load in both files for now and make sure they are formatted properly for the analysis
+
+### Import response metric data
+
+I'm going to load them all at once using purrr and we can separate them later depending on what we want to use them for
+```{r import response metrics}
+
+response_metrics <- file.path('data/processed',
+                              
+                              # provide file names
+                             c('srfn_proportional_detections.csv',
+                              'srfn_total_detections.csv',
+                              'srfn_presence_absence.csv')) %>% 
+  
+  # use purrr map to read in all files
+  map(~.x %>% 
+        
+        # use tidyverse read_csv
+        read_csv(.,
+                 
+                 # specify how some columns are read in 
+                 col_types = cols(site = col_factor())) %>% 
+        
+        # set column names to lowercase for coding ease
+        set_names(
+          names(.) %>% 
+            tolower())) %>% 
+  
+  # set names for list items
+   purrr::set_names('prop_detections',
+                   'total_detections',
+                   'presence_absence')
+
+
+```
+
+### Data checks
+
+```{r data checks 1}
+
+str(response_metrics)
+```
+First checks look good, but let's remove a few species we aren't interested in modeling for this analysis from all three data sets
+
+```{r remove species from list}
+
+# first create focal species object with only species we have enough data to model in one response metric or another
+glm_focal_vars <- c('site',
+                       'white-tailed_deer',
+                       'black_bear',           
+                       'coyote',   
+                       'elk',           
+                       'grey_wolf',        
+                       'grizzly_bear',             
+                       'lynx',          
+                       'moose',             
+                       'mule_deer',                          
+                       'red_fox',
+                       'snowshoe_hare')
+
+
+response_metrics_subset <- response_metrics %>%
+  
+  
+  map(~.x %>%
+        
+        # use purrr map to select only columns that match the focal species in all data sets
+        select(matches(paste(glm_focal_vars, 
+                             collapse = '|')))
+      )
+
+```
+
+## Subset response metrics 
+
+Now we should subset each data frame individually even further
+
+We prioritize the proportional monthly detection data as it gives us the most information, so for any species we have enough (we think) data for we will keep them in this data frame, otherwise we will remove
+
+```{r subset prop dets}
+
+response_metrics_subset$prop_detections <- response_metrics_subset$prop_detections %>% 
+  
+  # remove mule deer, red fox, and grizzly bear
+  select(-contains(c('red_fox',
+                     'mule_deer',
+                     'grizzly_bear')))
+
+head(response_metrics_subset$prop_detections)
+```
+
+Now moving onto our alternative response metrics, I'm not sure which we will use yet for the remaining three species so we will keep all three in both
+
+Basically this code will be the inverse of the code above to simply keep only those species instead of remove them
+
+```{r subset secondary metrics}
+
+# presence absence
+response_metrics_subset$presence_absence <- response_metrics_subset$presence_absence %>% 
+  
+  # remove mule deer, red fox, and grizzly bear
+  select(contains(c('site',
+                    'elk',
+                    'red_fox',
+                    'mule_deer',
+                    'grizzly_bear')))
+
+head(response_metrics_subset$presence_absence)
+
+# total detections
+response_metrics_subset$total_detections <- response_metrics_subset$total_detections %>% 
+  
+  # remove mule deer, red fox, and grizzly bear
+  select(contains(c('site',
+                    'red_fox',
+                     'mule_deer',
+                     'grizzly_bear')))
+
+head(response_metrics_subset$total_detections)
+```
+
+Okay now that these are cleaned up we can remove the full response metrics list from our environment so we don't use it
+
+```{r rm old response data}
+rm(response_metrics)
+```
+
+
+
+## Covariates
+
+We also need our potential explanatory variables
+
+### Read in data
+
+In the previous script, 2_ACME_SRFN_landscape_covariate_exploration_script.Rmd we cleaned up the covariates data let's also read that in as we will need to join it with the response metric data to run the models
+
+```{r import covariates}
+
+covariates <- read_csv('data/processed/srfn_covariates_grouped.csv',
+                       
+                       # also specify how site is read in 
+                       col_types = cols(site = col_factor())
+                       ) 
+```
+
+### Data checks
+
+```{r data checks 2}
+
+str(covariates)
+
+summary(covariates)
+```
+
+
+
+### Subset data by buffer
+
+We do need to subset the data so we have separate data frames for each buffer width to work with in the analysis **AND** to explore correlations between variables at each buffer width, as these may very with spatial scales
+
+Let's use a for loop to subset the data, thanks Andrew!
+```{r subset data}
+buffer_frames <- list()
+
+for (i in unique(covariates$buff_dist)){
+  
+  print(i)
+  
+  # Subset data based on radius
+  df <- covariates %>%
+    filter(buff_dist == i)
+  
+  # list of dataframes
+  buffer_frames <-c (buffer_frames, list(df))
+}
+
+# name list objects so we can extract names for plotting 
+
+buffer_frames <- buffer_frames %>% 
+  
+  # absurdly long way to do this but for sake of time fuck it
+  purrr::set_names('250 meter buffer',
+                   '500 meter buffer',
+                   '750 meter buffer',
+                   '1000 meter buffer',
+                   '1250 meter buffer',
+                   '1500 meter buffer',
+                   '1750 meter buffer',
+                   '2000 meter buffer',
+                   '2250 meter buffer',
+                   '2500 meter buffer',
+                   '2750 meter buffer',
+                   '3000 meter buffer',
+                   '3250 meter buffer',
+                   '3500 meter buffer',
+                   '3750 meter buffer',
+                   '4000 meter buffer',
+                   '4250 meter buffer',
+                   '4500 meter buffer',
+                   '4750 meter buffer',
+                   '5000 meter buffer')
+```
+
+Now we have a list with data frames for each buffer width which we can work with later. 
+
+### Add response metrics
+
+Now that we have the covariate data formatted we need to the response metric data frames that we will use for each species and tidy up the resulting data
+
+We will want separate data frames for each type of response metric - we will use the proportional detection data for all the species we have enough detections for, otherwise we will use either the total detections or presence absence data depending how the models fit.
+
+```{r response metric}
+
+# proportional detections
+prop_det_data <- buffer_frames %>% 
+  
+  # use purrr to join data to all individual buffer frames data sets
+  purrr::map(
+    ~.x %>% 
+      
+      # use left join so only sites with covariate data are kept
+      left_join(response_metrics_subset$prop_detections,
+                by = 'site'))
+
+
+# total detections
+total_det_data <- buffer_frames %>% 
+  
+  # use purrr to join data to all individual buffer frames data sets
+  purrr::map(
+    ~.x %>% 
+      
+      # use left join so only sites with covariate data are kept
+      left_join(response_metrics_subset$total_detections,
+                by = 'site'))
+
+# presence absence
+pres_absen_dat <-  buffer_frames %>% 
+  
+  # use purrr to join data to all individual buffer frames data sets
+  purrr::map(
+    ~.x %>% 
+      
+      # use inner join so only sites with both data
+      inner_join(response_metrics_subset$presence_absence,
+                by = 'site') %>%
+  
+  mutate(across(c(elk:grizzly_bear), as.factor)))
+
+```
+
+> I'm going to view each of these through the RStudio environemnt to look at them in depth and will print a subset of each ehre
+
+```{r new data frames}
+
+head(prop_det_data$`250 meter buffer`)
+
+str(pres_absen_dat$`2000 meter buffer`)
+```
+
+
+
+
+
+### Finish with data formatting
+
+Let's remove the objects we no longer need from the environment to keep our work space clean
+
+```{r rm data}
+rm(buffer_frames,
+   covariates,
+   df,
+   response_metrics_subset)
+```
+
+Let's also save this so we can use it in a later script to make figures
+```{r save list}
+saveRDS(prop_det_data, 'data/processed/prop_det_data.rds')
+```
+
+
+# Correlation plots
+
+Before we can develop any models we need to look at your covariates and see if there are any major violations of the model assumptions of independence, e.g. variables that are highly correlated - in which case we need to choose which variable in each pair to include in a model 
+
+```{r correlation plots, warning=FALSE}
+
+prop_det_data %>% 
+  
+  purrr::map(
+    ~.x %>% 
+      
+      # select only columns with covariates not other info to simplify the plot a bit
+      select(harvest:lc_shrub) %>% 
+      
+      # use chart.correlation to produce plots for each buffer size 
+      chart.Correlation(.,
+                        histogram = TRUE, 
+                        method = "pearson")
+  )
+```
+
+## Summary of correlation plots per buffer
+
+Here I summarize any pairs of highly correlated variables
+
+### Overall
+* harvest is correlated with the two new harvest groups (rightfully so) so we use the two groups or the overall harvest variable in a model  
+* several things correlated with veg edges which we expected so will drop veg edges 
+* several HFI features and lc_developed, also expected will use the features when possible as they are more specific/informative  
+* roads correlated with wells and pipelines - also expected you need roads to access/build these features 
+* lc_broadleaf and lc_coniferous also expected as they are the main landcover types and tend to be very inversely related, for each species will choose based on ecology  
+
+
+### Buffer specific deviations from overall
+
+750 m buffer 
+* roads and wells (continues as buffer size increases)
+
+1000m buffer  
+* wells and lc_coniferous are positively correlated starting around 750m buffer - kind of a weird one maybe?
+
+1250m buffer  
+* pipeline and wells (starts here 0.72 and continues with increasing buffer size) 
+
+
+So based on this the global model for buffer size selection should generally include the following set of variables 
+harvest_2000 +
+harvest_pre2000 +
+roads OR wells OR pipelines (depending on which is of greatest interest to the nation and ecologically releveant for each species)
+seismic_lines + 
+lc_broadleaf  +
+lc_grassland  +
+lc_mixed  +
+lc_shrub,
+
+
+
+# Proportional binomial models
+
+## Buffer selection
+
+An attempt to run glms for each species with every buffer and compare models all in one section combining purr with a custom function
+
+```{r}
+
+# create a vector with the species in the proportional detection data (prop_det_data) this one is unnecessarily long but I want to be descriptive throughout this code chunk
+
+# pb = proportional binomial
+pb_species_list <- c('black_bear',           
+                     'coyote',   
+                     'elk',           
+                     'grey_wolf',            
+                     'lynx',          
+                     'moose',
+                     'snowshoe_hare',
+                     'white-tailed_deer')
+
+# create custom function to run models for a given species
+run_pb_models_for_species <- function(species) {
+  
+  # provide pb data
+  prop_det_data %>%
+    
+    # use purrr to apply following function to all species
+    purrr::map(
+      ~.x %>%
+        
+        # run glm by pasting the species name in for the cbind function
+        glm(
+          formula = as.formula(paste0(
+            'cbind(`', species, '`, `absent_', species, '`) ~ ',
+            
+            # use non-correlated variables
+            'harvest_2000 + ',
+            'harvest_pre2000 + ',
+            # 'roads + ',
+            'seismic_lines + ',
+            'wells +',
+            # 'lc_agriculture + ',
+            'lc_broadleaf + ',
+            'lc_grassland + ',
+            'lc_mixed + ',
+            'lc_shrub'
+          )),
+          data = .,
+          family = 'binomial'
+        )
+    )
+}
+
+# Iterate this function over each species in the list and run the models
+pb_models_by_species <- purrr::map(pb_species_list, run_pb_models_for_species)
+
+# Custom function to compare models for a single species and print species name
+compare_pb_models <- function(models, species_name) {
+  cat("\nModel Selection for Species:", species_name, "\n")
+  pb_model_sel_results <- model.sel(models)
+  print(as.data.frame(pb_model_sel_results))
+  return(as.data.frame(pb_model_sel_results))
+}
+
+# Use map2 to iterate over each species' models and names, and compare models
+pb_model_comparisons <- purrr::map2(pb_models_by_species, 
+                                    pb_species_list, 
+                                    compare_pb_models)
+
+# Name the list elements by species for clarity
+names(pb_model_comparisons) <- pb_species_list
+
+
+# View comparisons for each species
+pb_model_comparisons
+```
+
+
+
+## Black bear
+
+> Depending on which variables I include in the buffer seleciton model the 250m or one of the 4250-4750m buffers comes out on top - similar to OSM scale results. Interesting that it is so sensitive to changes in single variables
+
+### Correlation plot
+
+Let's reprint the correlation plot for this specific buffer so we have to reference when constructing models. I've commented out the code to save the plot but can uncomment to use
+
+```{r bear corr, warning=FALSE}
+# open file to save plot
+# png("figures/corr_plot_250.png",
+#     width = 1000,
+#     height = 800)
+
+prop_det_data$`250 meter buffer` %>% 
+      
+      # select only columns with covariates not other info to simplify the plot a bit
+      select(harvest:lc_shrub) %>% 
+      
+      # use chart.correlation to produce plots for each buffer size 
+      chart.Correlation(.,
+                        histogram = TRUE, 
+                        method = "pearson")
+
+# # close file
+# dev.off()
+
+```
+
+### Models
+
+
+Now that we have best fit buffer size (250m) we can run several candidate models based on a priori hypotheses for what covariates might influence monthly presence/absence of black bears in our study area.
+
+```{r black bear models}
+
+# Null model
+ bbear_null <- glm(cbind(black_bear, absent_black_bear) ~ 1,
+          data = prop_det_data$`250 meter buffer`,
+          family = 'binomial')
+
+# # global model - removed because too many vaiables for sample size
+# bbear_global <- glm(cbind(black_bear, absent_black_bear) ~ 
+#                       scale(harvest_2000) +
+#                       scale(harvest_pre2000) +
+#                       roads + 
+#                       # scale(pipeline) + can't include with roads
+#                       scale(seismic_lines) +
+#                       scale(wells) +
+#                       scale(lc_agriculture) +  
+#                       scale(lc_broadleaf)  +
+#                       scale(lc_grassland)  +
+#                       scale(lc_mixed)  +
+#                       scale(lc_shrub),
+#                     data = prop_det_data$`250 meter buffer`,
+#                     family = 'binomial')
+
+# Natural heterogeneity
+bbear_nat <- glm(cbind(black_bear, absent_black_bear) ~   
+                   scale(lc_broadleaf) +
+                   scale(lc_grassland)  +
+                   scale(lc_mixed)  +
+                   scale(lc_shrub),
+                    data = prop_det_data$`250 meter buffer`,
+                    family = 'binomial')
+
+# forest harvest (TBD how this will look with yearly harvest data)
+bbear_harvest <- glm(cbind(black_bear, absent_black_bear) ~ 
+                      scale(harvest_2000) +
+                      scale(harvest_pre2000),
+                    data = prop_det_data$`250 meter buffer`,
+                    family = 'binomial')
+
+# agriculture - put on it's own because it doesn't fit with some of other variables but I am interested in it's influence
+bbear_ag <- glm(cbind(black_bear, absent_black_bear) ~ 
+                      scale(lc_agriculture),
+                    data = prop_det_data$`250 meter buffer`,
+                    family = 'binomial')
+
+# transportation (roads) * at 250m buffer can't combine with other industrial features (correlated with pipeline & wells)
+bbear_rds <- glm(cbind(black_bear, absent_black_bear) ~ 
+                      scale(roads),
+                    data = prop_det_data$`250 meter buffer`,
+                    family = 'binomial')
+
+# linear energy development
+bbear_linear_energy <- glm(cbind(black_bear, absent_black_bear) ~ 
+                      scale(pipeline) +
+                      scale(seismic_lines),
+                    data = prop_det_data$`250 meter buffer`,
+                    family = 'binomial')
+
+# polygonal energy development
+bbear_poly_energy <- glm(cbind(black_bear, absent_black_bear) ~ 
+                      scale(wells),
+                    data = prop_det_data$`250 meter buffer`,
+                    family = 'binomial')
+
+
+# energy development
+bbear_energy <- glm(cbind(black_bear, absent_black_bear) ~ 
+                      scale(pipeline) +
+                      scale(seismic_lines) +
+                      scale(wells),
+                    data = prop_det_data$`250 meter buffer`,
+                    family = 'binomial')
+
+
+# polygonal disturbance (harvest + polygonal energy development + agriculture)
+bbear_poly <- glm(cbind(black_bear, absent_black_bear) ~ 
+                    scale(harvest_2000) +
+                    scale(harvest_pre2000) +
+                    scale(wells),
+                  data = prop_det_data$`250 meter buffer`,
+                  family = 'binomial')
+
+
+# linear disturbance (transportation + linear energy development)
+bbear_linear <- glm(cbind(black_bear, absent_black_bear) ~ 
+                      scale(roads) +
+                      # pipeline + can't include correlated w/ roads 0.62
+                      scale(seismic_lines),
+                    data = prop_det_data$`250 meter buffer`,
+                    family = 'binomial')
+
+
+# overall human disturbance from energy and harvest
+bbear_disturb <- glm(cbind(black_bear, absent_black_bear) ~
+                       scale(harvest_2000) +
+                       scale(harvest_pre2000) +
+                       scale(roads) +
+                       # pipeline + can't include correlated w/ roads 0.62
+                       scale(seismic_lines) +
+                      scale(wells),
+                     data = prop_det_data$`250 meter buffer`,
+                     family = 'binomial')
+
+# linear + natural
+bbear_linear_nat <- glm(cbind(black_bear, absent_black_bear) ~
+                          scale(roads) +
+                          scale(seismic_lines) +
+                          scale(lc_broadleaf) +
+                          scale(lc_shrub),
+                        data = prop_det_data$`250 meter buffer`,
+                        family = 'binomial')
+
+
+# polygonal + natural
+bbear_poly_nat <- glm(cbind(black_bear, absent_black_bear) ~
+                        scale(harvest_2000) +
+                        scale(harvest_pre2000) +
+                        scale(wells) +
+                        scale(lc_broadleaf) +
+                        scale(lc_shrub),
+                      data = prop_det_data$`250 meter buffer`,
+                      family = 'binomial')
+
+```
+
+### Model selection
+```{r black bear model selection}
+
+# compare black bear models
+model.sel(bbear_null,
+          bbear_nat,
+          bbear_harvest,
+          bbear_ag,
+          bbear_rds,
+          bbear_linear_energy,
+          bbear_poly_energy,
+          bbear_energy,
+          bbear_poly,
+          bbear_linear,
+          bbear_disturb,
+          bbear_linear_nat,
+          bbear_poly_nat)
+```
+
+> The model with linear features (roads and seismic lines) was best fit, similar to unofficial OSM results I got in the scale analsyis for black bears
+
+
+### Top model/s summary
+```{r black bear model summaries}
+
+# linear
+summary(bbear_linear)
+```
+
+### Model fit 
+
+We will start with VIF
+```{r}
+
+vif(bbear_linear)
+
+  plot(bbear_linear,
+       which = 1,
+       main = 'Model fit black bear linear model')
+
+# calculate vif
+vif(bbear_linear) %>%
+  
+  # Converts the named vector returned by vif() into a tidy tibble
+  enframe(name = 'Predictor', 
+          value = 'VIF') %>%
+  
+  # plot with ggplot
+  ggplot(aes(x = reorder(Predictor, VIF), # reorders from smallest VIF to largest (not sure I want like this)
+             y = VIF)) +
+  
+  # plot as bars
+  geom_bar(stat = 'identity', fill = 'skyblue') +
+  
+  # add labels
+  labs(x = 'Predictor',
+       y = 'VIF') +
+  
+  # set theme
+  theme_classic()
+```
+
+
+
+
+#
+
+## Coyote
+
+> The top buffer for coyote was 5000m, other similarly performing buffers were around same size 4750, 4500
+
+### Correlation plot
+
+```{r coyote corr, warning=FALSE}
+
+# # open file to save plot
+# png("figures/corr_plot_5000.png",
+#     width = 1000,
+#     height = 800)
+
+prop_det_data$`5000 meter buffer` %>% 
+      
+      # select only columns with covariates not other info to simplify the plot a bit
+      select(harvest:lc_shrub) %>% 
+      
+      # use chart.correlation to produce plots for each buffer size 
+      chart.Correlation(.,
+                        histogram = TRUE, 
+                        method = "pearson")
+
+# # close file
+#  dev.off()
+```
+
+
+### Models
+
+```{r coyote models}
+
+# Null model
+ coyote_null <- glm(cbind(coyote, absent_coyote) ~ 1,
+          data = prop_det_data$`5000 meter buffer`,
+          family = 'binomial')
+
+
+# Natural heterogeneity
+coyote_nat <- glm(cbind(coyote, absent_coyote) ~   
+                      scale(lc_broadleaf) +
+                      scale(lc_grassland)  +
+                      scale(lc_mixed)  +
+                      scale(lc_shrub),
+                    data = prop_det_data$`5000 meter buffer`,
+                    family = 'binomial')
+
+# forest harvest
+coyote_harvest <- glm(cbind(coyote, absent_coyote) ~ 
+                      scale(harvest_2000) +
+                      scale(harvest_pre2000),
+                    data = prop_det_data$`5000 meter buffer`,
+                    family = 'binomial')
+
+# agriculture
+coyote_ag <- glm(cbind(coyote, absent_coyote) ~ 
+                      scale(lc_agriculture),
+                    data = prop_det_data$`5000 meter buffer`,
+                    family = 'binomial')
+
+# transportation (roads) * at 5000m buffer can't combine with other industrial features (correlated with pipeline 0.82 & wells 0.82)
+coyote_rds <- glm(cbind(coyote, absent_coyote) ~ 
+                      scale(roads),
+                    data = prop_det_data$`5000 meter buffer`,
+                    family = 'binomial')
+
+# linear energy development
+coyote_linear_energy <- glm(cbind(coyote, absent_coyote) ~ 
+                      scale(pipeline) +
+                      scale(seismic_lines),
+                    data = prop_det_data$`5000 meter buffer`,
+                    family = 'binomial')
+
+# polygonal energy development
+coyote_poly_energy <- glm(cbind(coyote, absent_coyote) ~ 
+                      scale(wells),
+                    data = prop_det_data$`5000 meter buffer`,
+                    family = 'binomial')
+
+
+# energy development - can't do at 5000 pipeline and wells correlated and other two variables are already in a model on their own
+# coyote_energy <- glm(cbind(coyote, absent_coyote) ~ 
+#                       scale(pipeline) +
+#                       scale(seismic_lines) +
+#                       scale(wells),
+#                     data = prop_det_data$`5000 meter buffer`,
+#                     family = 'binomial')
+
+
+# polygonal disturbance (harvest + polygonal energy development)
+coyote_poly <- glm(cbind(coyote, absent_coyote) ~ 
+                    scale(harvest_2000) +
+                    scale(harvest_pre2000) +
+                    scale(wells),
+                  data = prop_det_data$`5000 meter buffer`,
+                  family = 'binomial')
+
+
+# linear disturbance (transportation + linear energy development)
+coyote_linear <- glm(cbind(coyote, absent_coyote) ~ 
+                      scale(roads) +
+                      # pipeline + can't include correlated w/ roads
+                      scale(seismic_lines),
+                    data = prop_det_data$`5000 meter buffer`,
+                    family = 'binomial')
+
+
+# overall human disturbance (can't include pipeline or wells which are correlated with roads)
+coyote_disturb <- glm(cbind(coyote, absent_coyote) ~
+                       scale(harvest_2000) +
+                       scale(harvest_pre2000) +
+                       scale(roads) +
+                       scale(seismic_lines),
+                     data = prop_det_data$`5000 meter buffer`,
+                     family = 'binomial')
+
+# linear + habitat
+coyote_linear_nat <- glm(cbind(coyote, absent_coyote) ~
+                     scale(roads) +
+                     scale(seismic_lines) +
+                     scale(lc_broadleaf) +
+                     scale(lc_grassland),
+                   data = prop_det_data$`5000 meter buffer`,
+                   family = 'binomial')
+
+# polygonal + habitat
+coyote_poly_nat <- glm(cbind(coyote, absent_coyote) ~
+                         scale(harvest_2000) +
+                         scale(harvest_pre2000) +
+                         scale(wells) +
+                         scale(lc_broadleaf) +
+                         scale(lc_grassland),
+                       data = prop_det_data$`5000 meter buffer`,
+                       family = 'binomial')
+
+```
+
+> Conifer model performed better - will use conifer instead of broadleaf for now 
+
+### Model selection
+
+```{r coyote model sel}
+
+# compare coyote models
+model.sel(coyote_null,
+          coyote_nat,
+          coyote_harvest,
+          coyote_ag,
+          coyote_rds,
+          coyote_linear_energy,
+          coyote_poly_energy,
+          coyote_poly,
+          coyote_linear,
+          coyote_disturb,
+          coyote_linear_nat,
+          coyote_poly_nat)
+```
+
+### Top model summary
+
+```{r coyote mod summary}
+
+summary(coyote_disturb)
+```
+
+### Model assumptions and fit
+
+VIF
+```{r coyote model fit}
+
+# report VIF
+vif(coyote_disturb)
+
+# plot VIF
+plot(coyote_disturb,
+       which = 1,
+       main = 'Model fit coyote disturbance model')
+
+# additional plot of each variable
+# calculate vif
+vif(coyote_disturb) %>%
+  
+  # Converts the named vector returned by vif() into a tidy tibble
+  enframe(name = 'Predictor', 
+          value = 'VIF') %>%
+  
+  # plot with ggplot
+  ggplot(aes(x = reorder(Predictor, VIF), # reorders from smallest VIF to largest (not sure I want like this)
+             y = VIF)) +
+  
+  # plot as bars
+  geom_bar(stat = 'identity', fill = 'skyblue') +
+  
+  # add labels
+  labs(x = 'Predictor',
+       y = 'VIF') +
+  
+  # set theme
+  theme_classic()
+```
+
+
+
+
+
+
+
+
+## Grey wolf
+
+### Correlation plot
+
+The 5000m buffer was also the best fit for grey wolf
+
+```{r wolf corr plot, warning=FALSE}
+
+
+
+prop_det_data$`5000 meter buffer` %>% 
+      
+      # select only columns with covariates not other info to simplify the plot a bit
+      select(harvest:lc_shrub) %>% 
+      
+      # use chart.correlation to produce plots for each buffer size 
+      chart.Correlation(.,
+                        histogram = TRUE, 
+                        method = "pearson")
+
+
+```
+
+
+### Models
+
+```{r wolf models}
+# Null model
+ grey_wolf_null <- glm(cbind(grey_wolf, absent_grey_wolf) ~ 1,
+          data = prop_det_data$`5000 meter buffer`,
+          family = 'binomial')
+
+# Natural heterogeneity
+grey_wolf_nat <- glm(cbind(grey_wolf, absent_grey_wolf) ~   
+                      scale(lc_broadleaf) +
+                      scale(lc_grassland)  +
+                      scale(lc_mixed)  +
+                      scale(lc_shrub),
+                    data = prop_det_data$`5000 meter buffer`,
+                    family = 'binomial')
+
+# forest harvest (TBD how this will look with yearly harvest data)
+grey_wolf_harvest <- glm(cbind(grey_wolf, absent_grey_wolf) ~ 
+                      scale(harvest_2000) +
+                      scale(harvest_pre2000),
+                    data = prop_det_data$`5000 meter buffer`,
+                    family = 'binomial')
+
+# agriculture
+grey_wolf_ag <- glm(cbind(grey_wolf, absent_grey_wolf) ~ 
+                      scale(lc_agriculture),
+                    data = prop_det_data$`5000 meter buffer`,
+                    family = 'binomial')
+
+# transportation (roads) * at 5000m buffer can't combine with other industrial features (correlated with pipeline & wells)
+grey_wolf_rds <- glm(cbind(grey_wolf, absent_grey_wolf) ~ 
+                      scale(roads),
+                    data = prop_det_data$`5000 meter buffer`,
+                    family = 'binomial')
+
+# linear energy development
+grey_wolf_linear_energy <- glm(cbind(grey_wolf, absent_grey_wolf) ~ 
+                      scale(pipeline) +
+                      scale(seismic_lines),
+                    data = prop_det_data$`5000 meter buffer`,
+                    family = 'binomial')
+
+# polygonal energy development
+grey_wolf_poly_energy <- glm(cbind(grey_wolf, absent_grey_wolf) ~ 
+                      scale(wells),
+                    data = prop_det_data$`5000 meter buffer`,
+                    family = 'binomial')
+
+
+# polygonal disturbance (harvest + polygonal energy development)
+grey_wolf_poly <- glm(cbind(grey_wolf, absent_grey_wolf) ~ 
+                    scale(harvest_2000) +
+                    scale(harvest_pre2000) +
+                    scale(wells),
+                  data = prop_det_data$`5000 meter buffer`,
+                  family = 'binomial')
+
+
+# linear disturbance (transportation + linear energy development)
+grey_wolf_linear <- glm(cbind(grey_wolf, absent_grey_wolf) ~ 
+                      scale(roads) +
+                      # pipeline + can't include correlated w/ roads 0.82
+                      scale(seismic_lines),
+                    data = prop_det_data$`5000 meter buffer`,
+                    family = 'binomial')
+
+
+# overall human disturbance 
+grey_wolf_disturb <- glm(cbind(grey_wolf, absent_grey_wolf) ~
+                       scale(harvest_2000) +
+                       scale(harvest_pre2000) +
+                       scale(roads) +
+                       # pipeline + can't include correlated w/ roads 0.82
+                       scale(seismic_lines),
+                     # wells can't include correlated w/ roads 0.82
+                     data = prop_det_data$`5000 meter buffer`,
+                     family = 'binomial')
+
+# linear + natural (have to pix max of 5 variables) based on the detections per habitat type I chose shrub because there were no detections there so likely avoid 
+grey_wolf_linear_nat <- glm(cbind(grey_wolf, absent_grey_wolf) ~ 
+                              scale(roads) +
+                              scale(seismic_lines) +
+                              scale(lc_mixed)  +
+                              scale(lc_shrub),
+                    data = prop_det_data$`5000 meter buffer`,
+                    family = 'binomial')
+
+# polygonal and natural 
+grey_wolf_poly_nat <- glm(cbind(grey_wolf, absent_grey_wolf) ~ 
+                            scale(harvest_2000) +
+                            scale(harvest_pre2000) +
+                            scale(wells) +
+                            scale(lc_mixed)  +
+                            scale(lc_shrub),
+                          data = prop_det_data$`5000 meter buffer`,
+                          family = 'binomial')
+
+```
+
+### Model selection
+
+```{r wolf model sel}
+grey_wolf_model_sel <- model.sel(grey_wolf_null,
+          grey_wolf_nat,
+          grey_wolf_harvest,
+          grey_wolf_ag,
+          grey_wolf_rds,
+          grey_wolf_linear_energy,
+          grey_wolf_poly_energy,
+          grey_wolf_poly,
+          grey_wolf_linear,
+          grey_wolf_disturb,
+          grey_wolf_linear_nat,
+          grey_wolf_poly_nat)
+
+grey_wolf_model_sel
+```
+> Whether linear natural or just natural comes up as the 'top model' is very dependent on which landcover variables you include for linear natural. I'd say the driving force is mostly from mixed forest
+
+##### Format to word doc
+
+```{r, eval=FALSE}
+
+```
+
+### Top model summary
+
+```{r wolf top model}
+
+# summary(grey_wolf_nat)
+
+summary(grey_wolf_linear_nat)
+```
+
+### Model Aassumptions and fit
+
+VIF
+```{r wolf vif}
+
+# report VIF
+vif(grey_wolf_linear_nat)
+
+# plot VIF
+plot(grey_wolf_linear_nat,
+       which = 1,
+       main = 'Vif wolf model')
+
+# additional plot of each variable
+# calculate vif
+vif(grey_wolf_nat) %>%
+  
+  # Converts the named vector returned by vif() into a tidy tibble
+  enframe(name = 'Predictor', 
+          value = 'VIF') %>%
+  
+  # plot with ggplot
+  ggplot(aes(x = reorder(Predictor, VIF), # reorders from smallest VIF to largest (not sure I want like this)
+             y = VIF)) +
+  
+  # plot as bars
+  geom_bar(stat = 'identity', fill = 'skyblue') +
+  
+  # add labels
+  labs(x = 'Predictor',
+       y = 'VIF') +
+  
+  # set theme
+  theme_classic()
+
+
+# additional plot of each variable from the just nat model
+# calculate vif
+vif(grey_wolf_nat) %>%
+  
+  # Converts the named vector returned by vif() into a tidy tibble
+  enframe(name = 'Predictor', 
+          value = 'VIF') %>%
+  
+  # plot with ggplot
+  ggplot(aes(x = reorder(Predictor, VIF), # reorders from smallest VIF to largest (not sure I want like this)
+             y = VIF)) +
+  
+  # plot as bars
+  geom_bar(stat = 'identity', fill = 'skyblue') +
+  
+  # add labels
+  labs(x = 'Predictor',
+       y = 'VIF') +
+  
+  # set theme
+  theme_classic()
+```
+
+
+
+
+
+
+## Lynx
+
+The best lynx buffer size was the 500m buffer 
+
+### Correlation plot
+
+Let's print the correlation plot for the 500m buffer again here for reference when developing the lynx specific models
+```{r lynx corr, warning=FALSE}
+
+# # open file to save plot
+# png("figures/corr_plot_500.png",
+#     width = 1000,
+#     height = 800)
+
+prop_det_data$`500 meter buffer` %>% 
+      
+      # select only columns with covariates not other info to simplify the plot a bit
+      select(harvest:lc_shrub) %>% 
+      
+      # use chart.correlation to produce plots for each buffer size 
+      chart.Correlation(.,
+                        histogram = TRUE, 
+                        method = "pearson")
+
+# # close file
+#  dev.off()
+```
+
+
+### Models
+
+```{r lynx models}
+
+# Null model
+ lynx_null <- glm(cbind(lynx, absent_lynx) ~ 1,
+          data = prop_det_data$`500 meter buffer`,
+          family = 'binomial')
+
+# Natural heterogeneity
+lynx_nat <- glm(cbind(lynx, absent_lynx) ~   
+                      scale(lc_broadleaf) +
+                      scale(lc_grassland)  +
+                      scale(lc_mixed)  +
+                      scale(lc_shrub),
+                    data = prop_det_data$`500 meter buffer`,
+                    family = 'binomial')
+
+# forest harvest (TBD how this will look with yearly harvest data)
+lynx_harvest <- glm(cbind(lynx, absent_lynx) ~ 
+                      scale(harvest_2000) +
+                      scale(harvest_pre2000),
+                    data = prop_det_data$`500 meter buffer`,
+                    family = 'binomial')
+
+# agriculture
+lynx_ag <- glm(cbind(lynx, absent_lynx) ~ 
+                      scale(lc_agriculture),
+                    data = prop_det_data$`500 meter buffer`,
+                    family = 'binomial')
+
+# transportation (roads) * at 5000m buffer can't combine with other industrial features (correlated with pipeline & wells)
+lynx_rds <- glm(cbind(lynx, absent_lynx) ~ 
+                      scale(roads),
+                    data = prop_det_data$`500 meter buffer`,
+                    family = 'binomial')
+
+# linear energy development
+lynx_linear_energy <- glm(cbind(lynx, absent_lynx) ~ 
+                      scale(pipeline) +
+                      scale(seismic_lines),
+                    data = prop_det_data$`500 meter buffer`,
+                    family = 'binomial')
+
+# polygonal energy development
+lynx_poly_energy <- glm(cbind(lynx, absent_lynx) ~ 
+                      scale(wells),
+                    data = prop_det_data$`500 meter buffer`,
+                    family = 'binomial')
+
+
+# energy development - can do at this scale pipeline and well corr = 0.50
+lynx_energy <- glm(cbind(lynx, absent_lynx) ~
+                      scale(pipeline) +
+                      scale(seismic_lines) +
+                      scale(wells),
+                    data = prop_det_data$`500 meter buffer`,
+                    family = 'binomial')
+
+
+# polygonal disturbance (harvest + polygonal energy development + agriculture)
+lynx_poly <- glm(cbind(lynx, absent_lynx) ~ 
+                    scale(harvest_2000) +
+                    scale(harvest_pre2000) +
+                    scale(wells),
+                  data = prop_det_data$`500 meter buffer`,
+                  family = 'binomial')
+
+
+# linear disturbance (transportation + linear energy development)
+lynx_linear <- glm(cbind(lynx, absent_lynx) ~ 
+                      scale(roads) +
+                      # pipeline + can't include correlated w/ roads 0.62
+                      scale(seismic_lines),
+                    data = prop_det_data$`500 meter buffer`,
+                    family = 'binomial')
+
+
+# overall human disturbance (limit to 5 vars)
+lynx_disturb <- glm(cbind(lynx, absent_lynx) ~
+                      scale(harvest_2000) +
+                      scale(harvest_pre2000) +
+                      scale(roads) +
+                      # pipeline + can't include correlated w/ roads 0.62
+                      scale(seismic_lines) +
+                      scale(wells),
+                    data = prop_det_data$`500 meter buffer`,
+                    family = 'binomial')
+
+
+# linear + natural (have to pic max of 5) based on detections chose grassland had most detections and broadleaf which likely to have lynx as well
+lynx_linear_nat <- glm(cbind(lynx, absent_lynx) ~ 
+                              scale(roads) +
+                              scale(seismic_lines) +
+                              scale(lc_grassland)  +
+                              scale(lc_broadleaf),
+                    data = prop_det_data$`500 meter buffer`,
+                    family = 'binomial')
+
+# polygonal features and nat (limit 5 vars)
+lynx_poly_nat <- glm(cbind(lynx, absent_lynx) ~ 
+                       scale(harvest_2000) +
+                       scale(harvest_pre2000) +
+                       scale(wells) +
+                       scale(lc_grassland) +
+                       scale(lc_broadleaf),
+                     data = prop_det_data$`500 meter buffer`,
+                     family = 'binomial')
+```
+
+### Model selection
+
+```{r lynx model sel}
+
+model.sel(lynx_null,
+          lynx_nat,
+          lynx_harvest,
+          lynx_ag,
+          lynx_rds,
+          lynx_energy,
+          lynx_linear_energy,
+          lynx_poly_energy,
+          lynx_poly,
+          lynx_linear,
+          lynx_disturb,
+          lynx_linear_nat,
+          lynx_poly_nat)
+```
+
+### Top model/s summary
+
+```{r lynx top model}
+
+#summary(lynx_disturb)
+
+summary(lynx_poly)
+```
+
+### Model assumptions and fit
+
+```{r VIF lynx}
+
+# report VIF
+vif(lynx_poly)
+
+# plot VIF
+plot(lynx_poly,
+       which = 1,
+       main = 'Vif lynx model')
+
+
+# additional plot of each variable
+# calculate vif
+vif(lynx_poly) %>%
+  
+  # Converts the named vector returned by vif() into a tidy tibble
+  enframe(name = 'Predictor', 
+          value = 'VIF') %>%
+  
+  # plot with ggplot
+  ggplot(aes(x = reorder(Predictor, VIF), # reorders from smallest VIF to largest (not sure I want like this)
+             y = VIF)) +
+  
+  # plot as bars
+  geom_bar(stat = 'identity', fill = 'skyblue') +
+  
+  # add labels
+  labs(x = 'Predictor',
+       y = 'VIF') +
+  
+  # set theme
+  theme_classic()
+```
+
+
+
+
+
+## Moose
+
+> 500m was best fit buffer for moose
+
+### Correlation plot
+
+Let's print the correlation plot for the 500m buffer again here for reference when developing the lynx specific models
+```{r moose corr, warning=FALSE}
+
+prop_det_data$`500 meter buffer` %>% 
+      
+      # select only columns with covariates not other info to simplify the plot a bit
+      select(harvest:lc_shrub) %>% 
+      
+      # use chart.correlation to produce plots for each buffer size 
+      chart.Correlation(.,
+                        histogram = TRUE, 
+                        method = "pearson")
+
+
+```
+
+### Models
+
+```{r moose models}
+# Null model
+ moose_null <- glm(cbind(moose, absent_moose) ~ 1,
+          data = prop_det_data$`500 meter buffer`,
+          family = 'binomial')
+
+# Natural heterogeneity
+moose_nat <- glm(cbind(moose, absent_moose) ~   
+                      scale(lc_broadleaf) +
+                      scale(lc_grassland)  +
+                      scale(lc_mixed)  +
+                      scale(lc_shrub),
+                    data = prop_det_data$`500 meter buffer`,
+                    family = 'binomial')
+
+# forest harvest (TBD how this will look with yearly harvest data)
+moose_harvest <- glm(cbind(moose, absent_moose) ~ 
+                      scale(harvest_2000) +
+                      scale(harvest_pre2000),
+                    data = prop_det_data$`500 meter buffer`,
+                    family = 'binomial')
+
+# agriculture
+moose_ag <- glm(cbind(moose, absent_moose) ~ 
+                      scale(lc_agriculture),
+                    data = prop_det_data$`500 meter buffer`,
+                    family = 'binomial')
+
+# transportation (roads) * at 5000m buffer can't combine with other industrial features (correlated with pipeline & wells)
+moose_rds <- glm(cbind(moose, absent_moose) ~ 
+                      scale(roads),
+                    data = prop_det_data$`500 meter buffer`,
+                    family = 'binomial')
+
+# linear energy development
+moose_linear_energy <- glm(cbind(moose, absent_moose) ~ 
+                      scale(pipeline) +
+                      scale(seismic_lines),
+                    data = prop_det_data$`500 meter buffer`,
+                    family = 'binomial')
+
+# polygonal energy development
+moose_poly_energy <- glm(cbind(moose, absent_moose) ~ 
+                      scale(wells),
+                    data = prop_det_data$`500 meter buffer`,
+                    family = 'binomial')
+
+
+# energy development - can do at this scale pipeline and well corr = 0.50
+moose_energy <- glm(cbind(moose, absent_moose) ~
+                      scale(pipeline) +
+                      scale(seismic_lines) +
+                      scale(wells),
+                    data = prop_det_data$`500 meter buffer`,
+                    family = 'binomial')
+
+
+# polygonal disturbance (harvest + polygonal energy development + agriculture)
+moose_poly <- glm(cbind(moose, absent_moose) ~ 
+                    scale(harvest_2000) +
+                    scale(harvest_pre2000) +
+                    scale(wells),
+                  data = prop_det_data$`500 meter buffer`,
+                  family = 'binomial')
+
+
+# linear disturbance (transportation + linear energy development)
+moose_linear <- glm(cbind(moose, absent_moose) ~ 
+                      scale(roads) +
+                      # pipeline + can't include correlated w/ roads 0.62
+                      scale(seismic_lines),
+                    data = prop_det_data$`500 meter buffer`,
+                    family = 'binomial')
+
+
+# overall human disturbance (limit to 5 vars)
+moose_disturb <- glm(cbind(moose, absent_moose) ~
+                     scale(harvest_2000) +
+                    scale(harvest_pre2000) +
+                      scale(roads) +
+                      # pipeline + can't include correlated w/ roads 0.62
+                      scale(seismic_lines) +
+                      scale(wells),
+                    data = prop_det_data$`500 meter buffer`,
+                    family = 'binomial')
+
+
+# linear + natural (have to pic max of 5) based on detections (most and least)
+moose_linear_nat <- glm(cbind(moose, absent_moose) ~ 
+                          scale(roads) +
+                          # pipeline + can't include correlated w/ roads 0.62
+                          scale(seismic_lines) +
+                          scale(lc_broadleaf) +
+                          scale(lc_shrub),
+                        data = prop_det_data$`500 meter buffer`,
+                        family = 'binomial')
+
+# polygonal features and nat (limit 5 vars)
+moose_poly_nat <- glm(cbind(moose, absent_moose) ~ 
+                        scale(harvest_2000) +
+                        scale(harvest_pre2000) +
+                        scale(wells) +
+                        scale(lc_broadleaf) +
+                        scale(lc_shrub),
+                      data = prop_det_data$`500 meter buffer`,
+                      family = 'binomial')
+```
+
+### Model selection
+
+```{r moose model sel}
+
+model.sel(moose_null,
+          moose_nat,
+          moose_harvest,
+          moose_ag,
+          moose_rds,
+          moose_energy,
+          moose_linear_energy,
+          moose_poly_energy,
+          moose_poly,
+          moose_linear,
+          moose_disturb,
+          moose_linear_nat,
+          moose_poly_nat)
+```
+
+
+### Top model/s summary
+
+```{r moose summary}
+
+summary(moose_linear)
+```
+
+### Model assumptions and fit
+
+```{r moose VIF}
+
+# report VIF
+vif(moose_linear)
+
+# plot VIF
+plot(moose_linear,
+       which = 1,
+       main = 'Vif moose model')
+
+
+# additional plot of each variable
+# calculate vif
+vif(moose_linear) %>%
+  
+  # Converts the named vector returned by vif() into a tidy tibble
+  enframe(name = 'Predictor', 
+          value = 'VIF') %>%
+  
+  # plot with ggplot
+  ggplot(aes(x = reorder(Predictor, VIF), # reorders from smallest VIF to largest (not sure I want like this)
+             y = VIF)) +
+  
+  # plot as bars
+  geom_bar(stat = 'identity', fill = 'skyblue') +
+  
+  # add labels
+  labs(x = 'Predictor',
+       y = 'VIF') +
+  
+  # set theme
+  theme_classic()
+```
+
+
+
+
+
+## Snowshoe hare
+
+> 4000m was top buffer for hares
+
+### Correlation plot
+
+```{r hare corr plot, warning=FALSE}
+# open file to save plot
+# png("figures/corr_plot_4000.png",
+#     width = 1000,
+#     height = 800)
+
+prop_det_data$`4000 meter buffer` %>% 
+      
+      # select only columns with covariates not other info to simplify the plot a bit
+      select(harvest:lc_shrub) %>% 
+      
+      # use chart.correlation to produce plots for each buffer size 
+      chart.Correlation(.,
+                        histogram = TRUE, 
+                        method = "pearson")
+
+# # close file
+# dev.off()
+
+```
+
+### Models
+
+```{r hare models}
+# Null model
+ snowshoe_hare_null <- glm(cbind(snowshoe_hare, absent_snowshoe_hare) ~ 1,
+          data = prop_det_data$`4000 meter buffer`,
+          family = 'binomial')
+
+# Natural heterogeneity (I've taken broadleaf out of this model because the sign and significance were changing between models and is correlated 0.5 with grassland adn slightly with wells 0.48 and the sign for wells was changing depending on whether broadleaf was included in the model or not)
+snowshoe_hare_nat <- glm(cbind(snowshoe_hare, absent_snowshoe_hare) ~   
+                      # scale(lc_broadleaf) +
+                      scale(lc_grassland)  +
+                      scale(lc_mixed)  +
+                      scale(lc_shrub),
+                    data = prop_det_data$`4000 meter buffer`,
+                    family = 'binomial')
+
+# forest harvest 
+snowshoe_hare_harvest <- glm(cbind(snowshoe_hare, absent_snowshoe_hare) ~ 
+                      scale(harvest_2000) +
+                      scale(harvest_pre2000),
+                    data = prop_det_data$`4000 meter buffer`,
+                    family = 'binomial')
+
+# agriculture
+snowshoe_hare_ag <- glm(cbind(snowshoe_hare, absent_snowshoe_hare) ~ 
+                      scale(lc_agriculture),
+                    data = prop_det_data$`4000 meter buffer`,
+                    family = 'binomial')
+
+# transportation (roads) * at 40000m buffer can't combine with other industrial features (correlated with pipeline & wells)
+snowshoe_hare_rds <- glm(cbind(snowshoe_hare, absent_snowshoe_hare) ~ 
+                      scale(roads),
+                    data = prop_det_data$`4000 meter buffer`,
+                    family = 'binomial')
+
+# linear energy development
+snowshoe_hare_linear_energy <- glm(cbind(snowshoe_hare, absent_snowshoe_hare) ~ 
+                      scale(pipeline) +
+                      scale(seismic_lines),
+                    data = prop_det_data$`4000 meter buffer`,
+                    family = 'binomial')
+
+# polygonal energy development
+snowshoe_hare_poly_energy <- glm(cbind(snowshoe_hare, absent_snowshoe_hare) ~ 
+                      scale(wells),
+                    data = prop_det_data$`4000 meter buffer`,
+                    family = 'binomial')
+
+
+# # energy development - can't do due to correlations between wells and pipeline 0.91
+# snowshoe_hare_energy <- glm(cbind(snowshoe_hare, absent_snowshoe_hare) ~
+#                       scale(pipeline) +
+#                       scale(seismic_lines) +
+#                       scale(wells),
+#                     data = prop_det_data$`4000 meter buffer`,
+#                     family = 'binomial')
+
+
+# polygonal disturbance (harvest + polygonal energy development + agriculture)
+snowshoe_hare_poly <- glm(cbind(snowshoe_hare, absent_snowshoe_hare) ~ 
+                    scale(harvest_2000) +
+                    scale(harvest_pre2000) +
+                    scale(wells),
+                  data = prop_det_data$`4000 meter buffer`,
+                  family = 'binomial')
+
+
+# linear disturbance (transportation + linear energy development)
+snowshoe_hare_linear <- glm(cbind(snowshoe_hare, absent_snowshoe_hare) ~ 
+                      scale(roads) +
+                      # scale(pipeline) + can't include correlated with pipeline 0.81
+                      scale(seismic_lines),
+                    data = prop_det_data$`4000 meter buffer`,
+                    family = 'binomial')
+
+
+# overall human disturbance (limit to 5 vars)
+snowshoe_hare_disturb <- glm(cbind(snowshoe_hare, absent_snowshoe_hare) ~
+                     scale(harvest_2000) +
+                    scale(harvest_pre2000) +
+                      # scale(roads) + correlated w/ wells 0.80
+                      # pipeline + can't include correlated w/ wells 0.91
+                      scale(seismic_lines) +
+                      scale(wells),
+                    data = prop_det_data$`4000 meter buffer`,
+                    family = 'binomial')
+
+
+# linear + natural (have to pic max of 5) based on detections 
+snowshoe_hare_linear_nat <- glm(cbind(snowshoe_hare, absent_snowshoe_hare) ~ 
+                                  scale(pipeline) + 
+                                  scale(seismic_lines) +
+                                  scale(lc_grassland) +
+                                  scale(lc_shrub),
+                                data = prop_det_data$`4000 meter buffer`,
+                                family = 'binomial')
+
+# polygonal features and nat (limit 5 vars)
+snowshoe_hare_poly_nat <- glm(cbind(snowshoe_hare, absent_snowshoe_hare) ~ 
+                                scale(harvest_2000) +
+                                scale(harvest_pre2000) +
+                                scale(wells) +
+                                scale(lc_grassland) +
+                                scale(lc_shrub),
+                              data = prop_det_data$`4000 meter buffer`,
+                              family = 'binomial')
+```
+
+### Model selection
+
+```{r hare model sel}
+
+model.sel(snowshoe_hare_null,
+          snowshoe_hare_nat,
+          snowshoe_hare_harvest,
+          snowshoe_hare_ag,
+          snowshoe_hare_rds,
+          snowshoe_hare_linear_energy,
+          snowshoe_hare_poly_energy,
+          snowshoe_hare_poly,
+          snowshoe_hare_linear,
+          snowshoe_hare_disturb,
+          snowshoe_hare_linear_nat,
+          snowshoe_hare_poly_nat)
+```
+
+### Top model/s summary
+
+```{r hare model summary}
+
+#summary(snowshoe_hare_nat)
+
+summary(snowshoe_hare_disturb)
+```
+
+### Model assumptions and fit
+
+```{r har VIF}
+# report VIF
+vif(snowshoe_hare_disturb)
+
+# plot VIF
+plot(snowshoe_hare_disturb,
+       which = 1,
+       main = 'Vif snowshoe hare model')
+
+
+# additional plot of each variable
+# calculate vif
+vif(snowshoe_hare_disturb) %>%
+  
+  # Converts the named vector returned by vif() into a tidy tibble
+  enframe(name = 'Predictor', 
+          value = 'VIF') %>%
+  
+  # plot with ggplot
+  ggplot(aes(x = reorder(Predictor, VIF), # reorders from smallest VIF to largest (not sure I want like this)
+             y = VIF)) +
+  
+  # plot as bars
+  geom_bar(stat = 'identity', fill = 'skyblue') +
+  
+  # add labels
+  labs(x = 'Predictor',
+       y = 'VIF') +
+  
+  # set theme
+  theme_classic()
+```
+
+
+
+
+
+## White-tailed deer
+
+> 4250m was best buffer
+
+### Correlation plot
+
+```{r w_deer corr plot, warning=FALSE}
+
+# # open file to save plot
+# png("figures/corr_plot_4250.png",
+#     width = 1000,
+#     height = 800)
+
+prop_det_data$`4250 meter buffer` %>% 
+      
+      # select only columns with covariates not other info to simplify the plot a bit
+      select(harvest:lc_shrub) %>% 
+      
+      # use chart.correlation to produce plots for each buffer size 
+      chart.Correlation(.,
+                        histogram = TRUE, 
+                        method = "pearson")
+
+# # close file
+# dev.off()
+```
+
+### Models
+
+```{r w_deer models}
+
+# Null model
+ w_deer_null <- glm(cbind(`white-tailed_deer`, `absent_white-tailed_deer`) ~ 1,
+          data = prop_det_data$`4250 meter buffer`,
+          family = 'binomial')
+
+# Natural heterogeneity (checked how taking out broadleaf or grassland affected model results since this top model is suspiciously well performing and broadleaf was causing issues with snowshoe models)
+w_deer_nat <- glm(cbind(`white-tailed_deer`, `absent_white-tailed_deer`) ~   
+                      scale(lc_broadleaf) +
+                     scale(lc_grassland)  +
+                      scale(lc_mixed)  +
+                      scale(lc_shrub),
+                    data = prop_det_data$`4250 meter buffer`,
+                    family = 'binomial')
+
+w_deer_nat_grass <- glm(cbind(`white-tailed_deer`, `absent_white-tailed_deer`) ~   
+                      # scale(lc_broadleaf) +
+                     scale(lc_grassland)  +
+                      scale(lc_mixed)  +
+                      scale(lc_shrub),
+                    data = prop_det_data$`4250 meter buffer`,
+                    family = 'binomial')
+
+w_deer_nat_broadleaf <- glm(cbind(`white-tailed_deer`, `absent_white-tailed_deer`) ~   
+                              scale(lc_broadleaf) +
+                              # scale(lc_grassland)  +
+                              scale(lc_mixed)  +
+                              scale(lc_shrub),
+                            data = prop_det_data$`4250 meter buffer`,
+                            family = 'binomial')
+
+# forest harvest 
+w_deer_harvest <- glm(cbind(`white-tailed_deer`, `absent_white-tailed_deer`) ~ 
+                      scale(harvest_2000) +
+                      scale(harvest_pre2000),
+                    data = prop_det_data$`4250 meter buffer`,
+                    family = 'binomial')
+
+# agriculture
+w_deer_ag <- glm(cbind(`white-tailed_deer`, `absent_white-tailed_deer`) ~ 
+                      scale(lc_agriculture),
+                    data = prop_det_data$`4250 meter buffer`,
+                    family = 'binomial')
+
+# transportation (roads) * at 42500m buffer can't combine with other industrial features (correlated with pipeline & wells)
+w_deer_rds <- glm(cbind(`white-tailed_deer`, `absent_white-tailed_deer`) ~ 
+                      scale(roads),
+                    data = prop_det_data$`4250 meter buffer`,
+                    family = 'binomial')
+
+# linear energy development
+w_deer_linear_energy <- glm(cbind(`white-tailed_deer`, `absent_white-tailed_deer`) ~ 
+                      scale(pipeline) +
+                      scale(seismic_lines),
+                    data = prop_det_data$`4250 meter buffer`,
+                    family = 'binomial')
+
+# polygonal energy development
+w_deer_poly_energy <- glm(cbind(`white-tailed_deer`, `absent_white-tailed_deer`) ~ 
+                      scale(wells),
+                    data = prop_det_data$`4250 meter buffer`,
+                    family = 'binomial')
+
+
+# # energy development - can' do at this scale pipeline and well corr = 0.50't do due to correlations
+# w_deer_energy <- glm(cbind(`white-tailed_deer`, `absent_white-tailed_deer`) ~
+#                       scale(pipeline) +
+#                       scale(seismic_lines) +
+#                       scale(wells),
+#                     data = prop_det_data$`4250 meter buffer`,
+#                     family = 'binomial')
+
+
+# polygonal disturbance (harvest + polygonal energy development + agriculture)
+w_deer_poly <- glm(cbind(`white-tailed_deer`, `absent_white-tailed_deer`) ~ 
+                    scale(harvest_2000) +
+                    scale(harvest_pre2000) +
+                    scale(wells),
+                  data = prop_det_data$`4250 meter buffer`,
+                  family = 'binomial')
+
+
+# linear disturbance (transportation + linear energy development)
+w_deer_linear <- glm(cbind(`white-tailed_deer`, `absent_white-tailed_deer`) ~ 
+                      scale(roads) +
+                      # pipeline + can't include correlated w/ roads 0.81
+                      scale(seismic_lines),
+                    data = prop_det_data$`4250 meter buffer`,
+                    family = 'binomial')
+
+
+# overall human disturbance (limit to 5 vars)
+w_deer_disturb <- glm(cbind(`white-tailed_deer`, `absent_white-tailed_deer`) ~
+                        scale(harvest_2000) +
+                        scale(harvest_pre2000) +
+                        # scale(roads) +
+                        # pipeline + can't include correlated w/ roads 0.81 and wells 0.91
+                        scale(seismic_lines) +
+                        scale(wells),
+                      data = prop_det_data$`4250 meter buffer`,
+                      family = 'binomial')
+
+
+# linear + natural (have to pic max of 5) based on detections 
+w_deer_linear_nat <- glm(cbind(`white-tailed_deer`, `absent_white-tailed_deer`) ~ 
+                          scale(roads) +
+                          # pipeline + can't include correlated w/ roads 0.81
+                          scale(seismic_lines) +
+                          scale(lc_broadleaf) +
+                          scale(lc_shrub),
+                        data = prop_det_data$`4250 meter buffer`,
+                        family = 'binomial')
+
+# polygonal features and nat (limit 5 vars)
+w_deer_poly_nat <- glm(cbind(`white-tailed_deer`, `absent_white-tailed_deer`) ~ 
+                        scale(harvest_2000) +
+                        scale(harvest_pre2000) +
+                        scale(wells) +
+                        scale(lc_broadleaf) +
+                        scale(lc_shrub),
+                      data = prop_det_data$`4250 meter buffer`,
+                      family = 'binomial')
+```
+
+### Model selection
+
+```{r w_deer model sel}
+
+model.sel(w_deer_null,
+          w_deer_nat,
+          #w_deer_nat_broadleaf,
+          #w_deer_nat_grass,
+          w_deer_harvest,
+          w_deer_ag,
+          w_deer_rds,
+          w_deer_linear_energy,
+          w_deer_poly_energy,
+          w_deer_poly,
+          w_deer_linear,
+          w_deer_disturb,
+          w_deer_linear_nat,
+          w_deer_poly_nat)
+```
+
+### White-tailed deer top model/s
+
+I ran three natural models because it was coming out suspiciously on top (70+ AIC better than other models) and I wanted to ensure no issues were arising with changing sign etc for beta coefficients with grassland and broadleaf since r = 0.51, and the snowshoe hare model had issues but it seems the full natural model still performs best and none of the beta coefficient signs are changing if the variables included in the model don't change, so will stick with the full natural model
+
+```{r w_deer model summary}
+
+summary(w_deer_nat)
+
+#summary(w_deer_nat_broadleaf)
+
+#summary(w_deer_nat_grass)
+```
+
+### Model assumptions and fit
+
+```{r w_deer VIF}
+
+# report VIF
+vif(w_deer_nat)
+
+# plot VIF
+plot(w_deer_nat,
+       which = 1,
+       main = 'Vif white-tailed deer model')
+
+
+# additional plot of each variable
+# calculate vif
+vif(w_deer_nat) %>%
+  
+  # Converts the named vector returned by vif() into a tidy tibble
+  enframe(name = 'Predictor', 
+          value = 'VIF') %>%
+  
+  # plot with ggplot
+  ggplot(aes(x = reorder(Predictor, VIF), # reorders from smallest VIF to largest (not sure I want like this)
+             y = VIF)) +
+  
+  # plot as bars
+  geom_bar(stat = 'identity', fill = 'skyblue') +
+  
+  # add labels
+  labs(x = 'Predictor',
+       y = 'VIF') +
+  
+  # set theme
+  theme_classic()
+```
+
+
+
+
+
+
+# Logistic regression
+
+For the species we have less data for we will run a logistic regression with overall presence absence data instead of proportional monthly presence absence data. This data is much more coarse which is why we'd prefer the proportional binomial, but for these elusive/rare species we can use it to get some insights into responses to landscape disturbance etc. 
+
+> Note this was purely exploratory for SRFN info and report, we did not use this analysis for publication
+
+
+## Buffer selection
+
+We will repeat the buffer selection process for each species in our logistic regression, like we did for the proportional binomial models
+
+```{r logistic buffer sel}
+
+# create a vector with the species in the proportional detection data (prop_det_data) this one is unnecessarily long but I want to be descriptive throughout this code chunk
+
+# pb = proportional binomial
+log_species_list <- c('elk',           
+                     'red_fox',
+                     'grizzly_bear',
+                     'mule_deer')
+
+# create custom function to run models for a given species
+run_log_models_for_species <- function(species) {
+  
+  # provide pb data
+  pres_absen_dat %>%
+    
+    # use purrr to apply following function to all species
+    purrr::map(
+      ~.x %>%
+        
+        # run glm by pasting the species name in for the cbind function
+        glm(
+          formula = as.formula(paste0(
+             '`', species, '` ~ ',
+            
+            # use non-correlated variables
+            'harvest_2000 + ',
+            'harvest_pre2000 + ',
+            # 'roads + ',
+            'seismic_lines + ',
+            'wells +',
+            # 'lc_agriculture + ',
+            'lc_broadleaf + ',
+            'lc_grassland + ',
+            'lc_mixed + ',
+            'lc_shrub'
+          )),
+          data = .,
+          family = 'binomial'
+        )
+    )
+}
+
+# Iterate this function over each species in the list and run the models
+log_models_by_species <- purrr::map(log_species_list, run_log_models_for_species)
+
+# Custom function to compare models for a single species and print species name
+compare_log_models <- function(models, species_name) {
+  cat("\nModel Selection for Species:", species_name, "\n")
+  log_model_sel_results <- model.sel(models)
+  print(as.data.frame(log_model_sel_results))
+  return(as.data.frame(log_model_sel_results))
+}
+
+# Use map2 to iterate over each species' models and names, and compare models
+log_model_comparisons <- purrr::map2(log_models_by_species, 
+                                    log_species_list, 
+                                    compare_log_models)
+```
+
+Now that we have a best-fit buffer size for each species we can proceed with a logistic regression 
+
+## Elk
+
+I didn't like how elk was performing as a proportional binomial and based on the detection data I don't think there is enough to run it in that model framework, we will see how it looks as a logistic regeression model
+
+> 750m 
+
+### Correlation plot
+
+Let's reprint the correlation plot for the best fit buffer size to reference when defining our models
+
+```{r elk corr plot}
+
+# # open file to save plot
+# png("figures/logistic_regression/corr_plot_750.png",
+#     width = 1000,
+#     height = 800)
+
+pres_absen_dat$`750 meter buffer` %>% 
+      
+      # select only columns with covariates not other info to simplify the plot a bit
+      select(harvest:lc_shrub) %>% 
+      
+      # use chart.correlation to produce plots for each buffer size 
+      chart.Correlation(.,
+                        histogram = TRUE, 
+                        method = "pearson")
+
+# # close file
+# dev.off()
+```
+
+### Minority class
+
+Overparameterization is much easier with logistic regression models because the rule is n = 10 fr the observations in your minority class (presence) for each parameter. So we need to calculate how many 1's we have with each species so we know how many parameters we can have in our models. We have 59 observations total 
+
+```{r n elk}
+
+# get number of presence and absences
+summary(pres_absen_dat$`750 meter buffer`$elk)
+```
+
+> With only 11 in our minority class we can run single model variables only, not sure if this will actually be useful for report or publication but will do an example model set with elk to take a look
+
+### Models
+
+```{r elk models}
+
+# null
+elk_null <- glm(elk ~ 1,
+                data = pres_absen_dat$`750 meter buffer`,
+                family = 'binomial')
+
+# each landcover type
+elk_ag <- glm(elk ~ scale(lc_agriculture),
+                data = pres_absen_dat$`750 meter buffer`,
+                family = 'binomial')
+
+elk_broadleaf <- glm(elk ~ scale(lc_broadleaf),
+                data = pres_absen_dat$`750 meter buffer`,
+                family = 'binomial')
+
+elk_coniferous <- glm(elk ~ scale(lc_coniferous),
+                data = pres_absen_dat$`750 meter buffer`,
+                family = 'binomial')
+
+elk_grassland <- glm(elk ~ scale(lc_grassland),
+                data = pres_absen_dat$`750 meter buffer`,
+                family = 'binomial')
+
+elk_mixed <- glm(elk ~ scale(lc_mixed),
+                data = pres_absen_dat$`750 meter buffer`,
+                family = 'binomial')
+
+elk_shrub <- glm(elk ~ scale(lc_shrub),
+                data = pres_absen_dat$`750 meter buffer`,
+                family = 'binomial')
+
+# HFI variables
+
+elk_road <- glm(elk ~ scale(roads),
+                data = pres_absen_dat$`750 meter buffer`,
+                family = 'binomial')
+
+elk_harvest <- glm(elk ~ scale(harvest),
+                data = pres_absen_dat$`750 meter buffer`,
+                family = 'binomial')
+
+elk_harvest2000 <- glm(elk ~ scale(harvest_2000),
+                data = pres_absen_dat$`750 meter buffer`,
+                family = 'binomial')
+
+elk_harvest_pre2000 <- glm(elk ~ scale(harvest_pre2000),
+                data = pres_absen_dat$`750 meter buffer`,
+                family = 'binomial')
+
+elk_seismic <- glm(elk ~ scale(seismic_lines),
+                data = pres_absen_dat$`750 meter buffer`,
+                family = 'binomial')
+
+elk_pipe <- glm(elk ~ scale(pipeline),
+                data = pres_absen_dat$`750 meter buffer`,
+                family = 'binomial')
+
+elk_well <- glm(elk ~ scale(wells),
+                data = pres_absen_dat$`750 meter buffer`,
+                family = 'binomial')
+
+
+```
+
+### Model selection
+
+```{r log elk model sel}
+
+model.sel(elk_null,
+          elk_ag,
+          elk_broadleaf,
+          elk_coniferous,
+          elk_grassland,
+          elk_mixed,
+          elk_road,
+          elk_harvest,
+          elk_harvest2000,
+          elk_harvest_pre2000,
+          elk_seismic,
+          elk_pipe,
+          elk_well)
+```
+
+
+
+## Grizzly bear
+
+### Minority class
+
+Overparameterization is much easier with logistic regression models because the rule is n = 10 fr the observations in your minority class (presence) for each parameter. So we need to calculate how many 1's we have with each species so we know how many parameters we can have in our models. We have 59 observations total 
+
+```{r n grizz}
+
+# get number of presence and absences
+summary(pres_absen_dat$`750 meter buffer`$grizzly_bear)
+```
+
+
+
+### Mule deer
+
+
+### Minority class
+
+Overparameterization is much easier with logistic regression models because the rule is n = 10 fr the observations in your minority class (presence) for each parameter. So we need to calculate how many 1's we have with each species so we know how many parameters we can have in our models. We have 59 observations total 
+
+```{r n m_deer}
+
+# get number of presence and absences
+summary(pres_absen_dat$`750 meter buffer`$mule_deer)
+```
+
+
+### Red fox
+
+### Minority class
+
+Overparameterization is much easier with logistic regression models because the rule is n = 10 fr the observations in your minority class (presence) for each parameter. So we need to calculate how many 1's we have with each species so we know how many parameters we can have in our models. We have 59 observations total 
+
+```{r n fox}
+
+# get number of presence and absences
+summary(pres_absen_dat$`750 meter buffer`$red_fox)
+```
+

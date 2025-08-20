@@ -1,0 +1,1438 @@
+---
+title: "ACME camera script for SRFN project"
+author: "Marissa A. Dyck"
+date: "2024-12-11"
+output: 
+  html_document:
+    theme: journal
+    toc: yes
+    toc_float: yes
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+# Before you begin
+
+## Contact Info
+
+If you have question please email the most recent author, currently
+
+Marissa A. Dyck   
+Postdoctoral research fellow    
+University of Victoria    
+School of Environmental Studies   
+Email: [marissadyck17\@gmail.com](marissadyck17@gmail.com)
+
+## R markdown
+
+This script is written in R markdown and thus uses a mix of coding
+markup languages and R. If you are planning to run this script with new
+data or make any modifications you will want to be familiar with some
+basics of R markdown.
+
+Below is an R markdown cheatsheet to help you get started,\
+[R markdown
+cheatsheet](https://www.rstudio.com/wp-content/uploads/2015/02/rmarkdown-cheatsheet.pdf)
+
+## Install packages
+
+If you don't already have the following packages installed, use the code
+below to install them.
+
+```{r install packages, eval=FALSE}
+
+install.packages('tidyverse') 
+
+```
+
+## Load libraries
+
+Then load the packages to your library.
+
+```{r libraries}
+
+library('tidyverse') # data tidying, visualization, and much more; this will load all tidyverse packages, can see complete list using tidyverse_packages()
+```
+
+# Deployment data
+
+Let's start by importing the deployment data so we know how many cameras there are, info on the site names and locations for the study
+
+## Import deployment data
+
+Let's import the deployment data file and check the data for any issues
+
+```{r import deployment data}
+
+
+# read in deployment data file
+deploy <- read_csv('data/raw/deployment_srfn.csv',
+                   
+                   # specify how we want the columns read in 
+                   col_types = cols(Project.ID = col_factor(),
+                                    Deployment.Location.ID = col_factor(),
+                                    
+                                     # the format for dates must match the format that the dates are entered in the csv file (run ?col_date in the console to get mmore info)
+                                    Camera.Deployment.Begin.Date. = col_date(
+                                      format = "%m/%d/%Y"),
+                                    Camera.Deployment.End.Date = col_date(
+                                      format = "%m/%d/%Y"),
+                                    
+                                    .default = col_character())) %>%    
+
+   # change the column names to lowercase to reduce keystrokes and errors when typing
+set_names(
+    names(.) %>% 
+      tolower() %>%  
+      
+      # get rid of periods in the data and replace with underscores to match other data files and maintain best coding practices
+      str_replace_all(pattern = '\\.', 
+                      replacement = '_'))  
+
+
+```
+
+> Open the data file from the environment by clicking on it to check that it looks good 
+
+## Data checks
+
+### Structure
+
+Make sure columns imported correctly
+
+```{r deploy str}
+
+# make sure the columns read in properly
+
+str(deploy)
+# everything looks good
+```
+
+
+### Sites
+
+Let's check the levels for the landscape units (project_id) and the sites (deployment_location_id) to make sure they look correct, this is the file we will base the rest of the data checks on for the timelapse and covariate data so we want to make sure it is correct
+
+```{r deploy sites}
+# let's check the levels for the landscape units (project_id) and the sites (deployment_location_id) to make sure they match the other data
+
+levels(deploy$project_id)
+levels(deploy$deployment_location_id)
+
+
+```
+
+>I don't know all the details of project based on looking at other data files this deployment file is missing some information we will want later
+
+1. The sites are just numbers but in other files the site names are accompanied by an identified for the landscape unit category before the number so we will need to fix this    
+
+2. Also there should be a separate column for the landscape unit category (array) 
+
+### NAs
+
+Let's check that there aren't any NAs, if everything worked w/ no issues
+and was entered correctly there shouldn't be any NAs in this file
+
+```{r deploy NAs}
+
+# check that there aren't any NAs
+summary(deploy)
+```
+
+No NAs so we are good 
+
+## Data formatting
+
+We need to fix a couple things to make this data file work for our purposes later, in order to get the landscape unit info we will need to join this data with another file in the raw data called reference.csv
+
+> In the future I would recommend having one data file with all the necessary information and simplifying the column names so they match what we need to use later (e.g. array, site, start_date, end_date, etc.) 
+
+First lets format the deploy data
+
+```{r format deploy data}
+
+deploy_fixed <- deploy %>% 
+  
+  # change column names
+  rename(site_number = deployment_location_id,
+         start_date = camera_deployment_begin_date_,
+         end_date = camera_deployment_end_date)
+```
+
+Now let's remove the messy data so we don't accidentally use it later
+
+```{r rm deploy}
+rm(deploy)
+```
+
+
+### Import reference data
+
+Now lets import the reference.csv we need
+
+```{r import ref csv}
+
+sites <- read_csv('data/raw/reference.csv',
+                  
+                  # specify column types
+                  col_types = cols(.default = col_factor())) %>% 
+
+# I don't like the original column names I think they are confusing so I'm quick going to change them here
+rename(site_number = site,
+       site = real_site)
+
+```
+
+### Join data and reformat
+
+Now we need to join the deploy_fixed with the sites data file so we have all the info we need in one spot
+
+```{r join deploy sites}
+
+deploy_fixed <- deploy_fixed %>% 
+  
+  full_join(sites,
+            by = 'site_number')
+```
+
+Okay now that this has the info we need we just want to generate one more column and reorganize the data. We need a column for landscape unit (array) which we can extract from the site column
+
+```{r add array}
+
+deploy_fixed <- deploy_fixed %>% 
+  
+  # extract the data from the site column before the underscore
+  mutate(array = str_extract(site, "^[^_]+"),
+         
+         #convert site_number to factor
+         site_number = as.factor(site_number)) %>% 
+  
+  #rearrange the columns
+  relocate(site, array, .after = site_number)
+```
+
+> Now we have everything we need let's double check the data looks good
+
+Let's check that the sites all matched up okay from the reference files (sites) to the deployment data
+
+```{r sites summary}
+
+summary(deploy_fixed$site)
+summary(deploy_fixed$site_number)
+```
+Okay that looks good there is one entry per site and no NAs in either column
+
+Let's check that they match the reference data using a handy function `setdiff()`
+
+```{r}
+# check which sites are in deploy fixed data that are not in sites
+setdiff(levels(deploy_fixed$site),
+        levels(sites$site))
+
+# and switch the order to check if there are extras in sitest data that are not in deploy fixed
+setdiff(levels(sites$site),
+        levels(deploy_fixed$site))
+
+```
+No mismatches that's great!
+
+## Finish with deployment data
+
+### Save deploy data
+
+```{r save deploy data}
+
+# save to processed data folder
+
+write_csv(deploy_fixed,
+          'data/processed/srfn_deploy_fixed.csv')
+
+```
+
+## Camera operability
+
+We can check the length each camera was operating using the cleaned deployment data, this is important for calculating the proportional presence/absences for analysis later on so we need to make sure nothing looks inaccurate here.
+
+Let's plot the camera operability with `ggplot()` to look at this
+
+
+```{r camera operability}
+
+# if starting from this point read in data 
+deploy_fixed <- read_csv('data/processed/srfn_deploy_fixed.csv') %>% 
+  
+  # make sure site re-reads in as a factor to compare with other data sets
+  mutate(site = as.factor(site))
+
+
+# create graph of camera operability ##KATE edit: in first line it referenced project_id, I changed to "array"
+
+cam_op <- ggplot(deploy_fixed, aes(color = array))+
+  
+  geom_segment(aes(x = start_date, 
+                   xend = end_date,
+                   y = site, 
+                   yend = site)) +
+  
+  theme(axis.text = element_text(size = 6))
+
+# view plot
+cam_op
+```
+
+### Save camera operability
+
+```{r save cam op}
+
+
+# Save the plot as a jpg
+ggsave( "figures/camera_operability.jpg", 
+        cam_op,
+        width = 8, 
+        height = 6, 
+        units = 'in',
+        dpi = 500)
+
+```
+
+
+# Timelapse data
+
+This code will import all of the timelapse data files and merge them into one data frame.
+
+Make a list of all the data files and use `map_drf()` to read them in and join them to one data frame (map is a function in the *purrr* package that performs iterations and map_dfr returns data frames by row-binding objects together).
+
+```{r import timelapse data, message=FALSE, warning=FALSE}
+
+# make a list of all .csv files in the 2. Timelapse Files folder
+srfn_data <- list.files(
+  path = 'data/raw/timelapse_csvs', # provide the folder/s within the working drive where the files are stored
+  pattern = '*.csv*', # provide the extension in case there are other files saved in that folder you don't want to load
+  full.names = TRUE) %>% 
+  
+  map_dfr(~.x %>% 
+            read_csv(.,
+                     
+                              # specify how to read in the various columns, if you don't specify this R reads some of the columns in differently for different files and the code won't work to join them. (Still looking for a more efficient way to do this rather than one-by-one but for now this works)
+                              col_types = cols(RootFolder = col_character(),
+                                               File = col_character(),
+                                               RelativePath = col_character(),
+                                               Dark = col_logical(),
+                                               DeleteFlag = col_logical(),
+                                               Site = col_factor(),
+                                               Classifier = col_factor(),
+                                               Snow = col_factor(),
+                                               Species = col_factor(),
+                                               Event = col_character(),
+                                               Empty = col_logical(),
+                                               CoatColour = col_character(),
+                                               CameraMalfunction = col_factor(),
+                                               OtherSpecify = col_character(),
+                                               Comments = col_character(),
+                                               Noteworthy = col_logical(),
+                                               DateTime = col_datetime(format = "%Y-%m-%d %H:%M:%S"),
+                                               .default = col_integer())) %>%  #.default sets any unspecified columns to this type
+           
+           # set the column names to lowercase, this makes it easier to avoid case-sensitive mistakes when coding
+           set_names(
+             names(.) %>%  
+               tolower()))
+
+
+```
+
+
+## Data checks
+
+
+### Data structure
+
+Check the internal structure of the data using the `str()` function.
+
+This should all be good since we specified how to read in each variable above, but if new columns are added from the Timelapse program/process, that could change things each year so we should double check anyways.
+
+```{r timelapse str}
+
+# check the internal structure
+str(srfn_data)
+
+```
+
+The variables all look like they uploaded with the correct format
+
+### Column names
+
+We can use the `names()` function to check that all the column names are correct and match with other year's of OSM data
+
+```{r}
+
+names(srfn_data)
+```
+
+Because there are slight differences in the number/order of columns between files, R creates an extra columns ( ...38) which we
+will delete later.
+
+We also need to add a month and year column for future data processing steps, we can extract these columns from the datetime column in the data formatting below
+
+Lastly we need the site column to match the sites from the deployment data and add an array column.
+
+> Before we proceed with additional data checks let's get these things fixed now and see what remains issues for later
+
+## Data manipulation part 1
+
+```{r format srfn data}
+
+srfn_data_fixed <- srfn_data %>% 
+  
+  # first rename site to site_number so we can join with the 'sites' data file
+  rename(site_number = site) %>% 
+  
+  # now join with the sites data so we have the right site and array info
+  left_join(sites,
+            by = 'site_number') %>% 
+  
+  # add month and year columns from the datetime data for merging with other files later
+  mutate(month = month(datetime),
+         year = year(datetime),
+         
+         # add array column from the site column
+         array = str_extract(site, "^[^_]+")) %>% 
+  
+  # remove columns we won't be using to simplify the data file
+  select(!c(rootfolder:deleteflag,
+            classifier,
+            otherspecify:noteworthy,
+            choice0,
+            ...38
+            )) %>% 
+  
+  # move the site and array column next to site number
+  relocate(site, array, 
+           .after = site_number)
+```
+
+Okay now that we have all the columns we need we can do some more data checks
+
+Let's remove the messy data first
+
+```{r rm srfn_date}
+rm(srfn_data)
+```
+
+
+### Sites
+
+Based on the deployment data there are 64 sites, lets see if we have the same number and the site names match (the names should match since we joined them from the reference (sites) file)
+
+```{r tiemlapse sites}
+
+# check that all the sites are accounted for
+levels(srfn_data_fixed$site) 
+
+
+```
+
+This site column looks good but we wouldn't sexpect issues since we joined that from the reference (sites) data, lets check the site_number column as well
+
+```{r timelapse site_number}
+
+levels(srfn_data_fixed$site_number)
+```
+There appear to be 65 sites in the site_number column instead of 64, so this doesn't match with the reference file perfectly, let's explore this more
+
+```{r site summary}
+
+summary(srfn_data_fixed$site)
+```
+
+Yup it looks like the reference data file (sites) was maybe missing a site_number that we have in the timelapse data, we can check if there's a mismatch somewhere using the  `setdiff()` argument. 
+
+```{r timelapse sites compare}
+
+# check which sites are in timelapse data that are not in deployment
+setdiff(levels(srfn_data_fixed$site),
+        levels(deploy_fixed$site))
+
+# and switch the order to check if there are extras in deployment data compared to timelapse
+setdiff(levels(deploy_fixed$site),
+        levels(srfn_data_fixed$site))
+
+# check which sites numbers are in timelapse data that are not in deployment
+setdiff(levels(srfn_data_fixed$site_number),
+        levels(deploy_fixed$site_number))
+
+# and switch the order to check if there are extras in deployment data compared to timelapse
+setdiff(levels(deploy_fixed$site_number),
+        levels(srfn_data_fixed$site_number))
+
+```
+
+Okay so the output tells us that site_number 9 is only in the timelapse data and not in the reference data, which means it's also missing from the deploy_fixed data
+
+> Check with Kaitlin and SRFN folks about site 9 which we have timelapse data for but no deployment data and it wasn't in the reference.csv
+
+### Species names
+
+Let's check that all the species names were entered correctly and we don't have any duplicates with different spelling or something, which is common with wildlife data.
+
+Since we set species as a factor when we imported the data we can also use the the `levels()` function to see all the species names.
+
+```{r timelapse species}
+
+# check that all the species names were entered correctly
+levels(srfn_data_fixed$species)
+
+# no glaring issues with species entries
+
+```
+
+No glaring issues here.
+
+### Check for NAs
+
+There are a lot of NAs in this data set, and most of them are fine but we should check that there aren't NAs for some of the more critical information like the site and datetime columns. We can use the `summary()` function to get a printout of all the variables.
+
+This is also a great way to check for any other glaring issues such as miscounted groups (really large or really small max/min numbers) etc.
+
+```{r timelapse NAs}
+
+# check for NAs in columns that shouldn't have NAs, looking at the summary is also a good way to check for other issues with the data
+summary(srfn_data_fixed)
+
+```
+
+It looks like the only issues are with some mismatch in the sites and site_numbers we have, after I check with Kaitlin about this I will fix
+
+```{r explore NAs}
+# Looking at the data that have NAs for site_number
+
+srfn_data_NA <-  srfn_data_fixed %>% 
+  filter(is.na(site))
+
+# View(srfn_data_NA)
+
+summary(srfn_data_NA$species)
+```
+> So it looks like there's 1400 entries or so with NAs for the site info, these are primarily blank entries but there are several with white-tailed deer, moose, snowshoe hare, black bear, and coyote. Nothing too crazy and I'm assuming if there isn't data in the timelapse entries there wasn't data for them but I will check with Kaitlin
+
+For now I will remove data with NAs for the site column since we won't have any covariate data to work them and can't use that data in the GLMs
+
+```{r remove NAs}
+
+srfn_data_fixed <- srfn_data_fixed %>% 
+  
+  filter(!is.na(site))
+
+summary(srfn_data_fixed)
+```
+
+
+## Finish timelapse data
+
+### Save data
+
+In case someone wants all of the raw timelapse data without the issues that we fixed in the data manipulation section we should save this to a folder so we don't have to run the code again.
+
+> However this file was too large to push to Github so I'm going to make this chunk so it doesn't run but it's here in the code if someone needs it
+
+```{r save timelapse, eval=FALSE}
+
+# Save clean timelapse data -----------------------------------------------
+
+# if someone needs this data later
+write_csv(srfn_data_fixed,
+          'data/processed/srfn_timelapse_fixed.csv')
+
+```
+
+
+## Image summaries
+
+Some info to report about the number of images per species 
+
+
+```{r}
+srfn_data_fixed %>% 
+  
+  group_by(species) %>% 
+  
+  summarise(count = n()) %>% 
+  
+  arrange(desc(count))
+```
+
+### Figure of images
+
+```{r}
+
+image_plot <- 
+  
+  srfn_data_fixed %>% 
+  
+  filter(species %in% c(# focal species
+    "Black bear",
+    "Coyote",
+    "Grey wolf",
+    "Moose",
+    "Lynx",
+    "Snowshoe hare",
+    "White-tailed deer",
+    
+    # additional species
+    'Elk',
+    'Mule deer',
+    #'Red squirrel',
+    'Grizzly bear',
+    'Red fox',
+    #'Human',
+    'Fisher',
+    #'Spruce grouse',
+    'Cougar',
+    'Marten'
+   # 'Domestic dog',
+    # 'Ruffed grouse',
+    # 'Raven',
+    # 'Owl'
+  )) %>% 
+  
+  # Convert species to a factor with alphabetical levels
+  mutate(species = factor(as.character(species), 
+                          levels = sort(unique(as.character(species))))) %>% 
+  
+  group_by(species) %>% 
+  
+  
+  
+  summarise(count = n()) %>% 
+  
+  ggplot(., aes(x = species,
+                y = count)) +
+  
+  # add bars for each species
+  geom_col() +
+  
+  # add the count printed above each column as text
+  geom_text(aes(label = count,
+                y = count + 4000),
+            size = 4) +
+  
+  # specify smaller breaks for y-axis
+  scale_y_continuous(breaks = seq(0, 150000, by = 20000)) +
+  
+  # generate custom labels for axis
+  labs(x = 'Species',
+       y = 'Number of images') +
+  
+  coord_flip() +
+  
+  theme_classic() +
+  
+  theme(axis.text = element_text(size = 16),
+        axis.title = element_text(size = 18))
+        #axis.text.x = element_text(angle = 90))
+
+image_plot
+```
+### Save graph
+
+```{r}
+ggsave('srfn_all_images.jpg',
+       image_plot,
+       path = 'figures',
+       width = 12,
+       height = 10,
+       units = 'in',
+       dpi = 600
+       )
+```
+
+
+## Independent detections
+
+For the models we want to run we need data for the independent detections of each species at each site. We've defined independent detections as those at least 30 minutes apart.
+
+The data manipulation and loop below will do this for us.
+
+```{r independent detections}
+  
+# prep the data for calculating independent detections
+srfn_det <- srfn_data_fixed %>% 
+  
+  # select only variables of interest
+  select(array,
+         site_number,
+         site,
+         species,
+         datetime,
+         month,
+         year) %>% 
+  
+  # remove rows with no species info
+  drop_na(species) %>% 
+  
+  # now we need to create a new variable called timediff
+  # first make sure data are arrange in proper order
+  arrange(site_number, site, species, datetime) %>% # this will NOT work if not in correct order (early-late date)
+  
+  # create groups for each species at each site
+  group_by(species, site) %>%
+  
+  # create new variable timediff that will calculate the difference 
+  mutate(timediff = as.numeric(difftime(datetime,lag(datetime),
+                                        units = "mins")))
+
+
+# set the independent detection threshold to 30 minutes
+mins <- 30 
+
+# loop that assigns group ID
+# identifies when there are photos/rows that are more than 30 mins apart
+# Attributes an event ID
+srfn_det$event_id <- 9999
+seq <- as.numeric(paste0(nrow(srfn_det),0))
+seq <- round(seq,-(nchar(seq)))
+
+for (i in 2:nrow(srfn_det)) {
+  srfn_det$event_id[i-1]  <- paste0("E",format(seq, scientific = F))
+  if(is.na(srfn_det$timediff[i]) | abs(srfn_det$timediff[i]) > (mins)){
+    seq <- seq + 1
+  }
+}
+
+if(srfn_det$timediff[nrow(srfn_det)] < (mins)|
+   is.na(srfn_det$timediff[nrow(srfn_det)])){
+  srfn_det$event_id[nrow(srfn_det)] <- srfn_det$event_id[nrow(srfn_det)-1]
+} else{srfn_det$event_id[nrow(srfn_det)] <- paste0("E",format(seq+1, scientific = F))
+}
+
+# now create a new data frame with a single row for each event
+srfn_ind_det <- srfn_det %>% 
+  group_by(event_id) %>%
+  filter(row_number()==1)
+
+srfn_ind_det
+
+```
+
+> I hate this loop/all the many steps to do this, remind me to try to find a more elegant/understandable way to do this step at a later date
+
+
+### Save independent detections
+
+Let's also save this data file for later
+
+```{r save detection data}
+
+write_csv(srfn_ind_det,
+          'data/processed/srfn_ind_det.csv')
+
+```
+
+## Graphs
+
+### Indpendent detections for mammals
+
+Now lets create a few quick figures to look at the detection data
+
+```{r graph mammal detections}
+
+# Data visualization independent detections---------------------------------------------
+
+# read in saved detection data if starting here
+#detections <- read_csv('figures/srfn_ind_det.csv') %>% 
+ 
+detections <- srfn_ind_det %>%
+  # change site, species and event_id to factor
+  mutate_if(is.character,
+            as.factor)
+
+# check number of different species
+sort(levels(srfn_ind_det$species))
+
+# create a vector of the list of mammals to use for quick data visualization/exploration. Could also create a list of species that aren't useful if that is shorter and use filter(!species %in% OBJECTNAME) but for this example the vectors were about the same length 
+animals <- c('Black bear',
+             'Cougar',            
+             'Coyote',           
+             'Domestic dog',      
+             'Elk',
+             'Fisher',            
+             'Grey wolf',        
+             'Grizzly bear',
+             'Lynx',              
+             'Marten',           
+             'Moose',             
+             'Mule deer',             
+             'Owl', 
+             'Raven',             
+             'Red fox',           
+             'Red squirrel',      
+             'Ruffed grouse',
+             'Snowshoe hare',     
+             'Spruce grouse',
+             'White-tailed deer'
+            )
+
+# remove NAs and select just images with mammals first then pipe new data into ggplot
+det_graph <- detections %>% 
+  
+  # remove less useful species
+  filter(species %in% animals) %>% 
+  
+  # get the number of individual detections per species to add to graph
+  group_by(species) %>% 
+  
+  mutate(n = n()) %>% 
+  
+  ungroup() %>% 
+  
+  ggplot(.,
+         aes(x = species)) +
+  
+  # create bar graph of the counts of each spp in the data
+  geom_bar(aes(fill = species)) +
+  
+  # add the number of detections above each bar using the variable n we calculated earlier
+  geom_text(aes(label = n,
+                y = n + 50),
+            size = 4) +
+  
+  # change y axis label
+  labs(y = 'Number of independent detections') +
+  
+  # change breaks for y axis
+  scale_y_continuous(breaks = seq(0,3500, by = 250)) +
+  
+  # change theme elements
+  theme(axis.text.x = element_text(angle = 90,
+                                   vjust = 0.5,
+                                   hjust = 1,
+                                   size = 14),
+        axis.title = element_text(size = 16),
+        axis.ticks.x = element_blank(),
+        panel.grid = element_blank()) 
+
+# print graph
+det_graph
+
+
+```
+
+If we want to save the plot for easier viewing later we can use the code below
+
+```{r save det_graph, eval=FALSE}
+
+# save graph as jpeg (can also save as tiff, png, pdf by changing the file extension) but don't use .tiff in the github repo it takes up too much space and causes issues
+ggsave("srfn_indv_det_graph.jpeg",
+       det_graph,
+       path = 'figures',
+       width = 12,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+
+```
+
+### Independent detections per LU
+
+let's also create one that graphs each LU in it's own panel using
+facet_wrap
+
+```{r det graph LUs}
+# let's also create one that graphs each LU in it's own panel using facet_wrap
+det_plot_LUs <- detections %>% 
+  
+  # remove less useful species
+  filter(species %in% animals) %>% 
+  
+ # group by array and species to calculate dets per spp per LU
+ group_by(array, species) %>% 
+  
+  # calculate a column with unique accounts of each species
+  reframe(count = n_distinct(event_id)) %>% 
+  
+  # pipe to ggplot and set aesthetics mapping
+  ggplot(aes(x = reorder(species, count), y = count)) +
+  
+  # plot as bar graph
+  geom_col() +
+  
+  # plot each LU in own panel
+  facet_wrap(vars(array)) +
+  
+  # add the number of detections at the end of each bar
+  geom_text(aes(label = count),
+            color = "black",
+            size = 3,
+            hjust = 0.2,
+            vjust = -0.3) +
+  
+  # label x and y axis with informative titles
+  labs(x = 'Species',
+       y = 'Number of Independent (30 min) Detections') +
+  
+  # add title to plot with LU name
+  
+  ggtitle("Detections Per Landscape Category")+
+  
+  # set the theme
+  theme_classic() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(angle = 90,
+                                   vjust = 0.5,
+                                   hjust = 1,
+                                   size = 12))
+
+# view plot
+det_plot_LUs
+```
+
+We can also save this plot if we want it for reports etc.
+
+```{r}
+
+# save this plot
+
+ggsave('srfn_ind_det_per_LU.jpg',
+       det_plot_LUs,
+       dpi = 600,
+       path = 'figures',
+       width = 10,
+       height = 12,
+       units = 'in')
+```
+
+# Response metrics
+
+there are several response metrics we can calculate, the ones we will
+cover here are.
+
+1.  Total independent detections per species/site
+2.  Presence/absence per species/site
+3.  Proportion of monthly detections
+
+> Generally we only need #3 (proportional monthly detections) but we will also do #2 for some of the scarcer species of interst (grizzly bear and mule deer)
+
+## Data
+
+For this we need the deployment and independent detection data we created earlier, if you are still working through this script its the 'deploy_fixed' & 'detections' objects
+
+```{r response metric data}
+
+# deploy
+deploy_fixed <- read_csv('data/processed/srfn_deploy_fixed.csv') %>% 
+  
+  # instead of specifying how each column reads in because this was giving me issues with the date column for some reason we can adjust a couple columns that read in improperly here
+  mutate(across(c(project_id:array), as.factor))
+
+
+# detections
+detections <- read_csv('data/processed/srfn_ind_det.csv') %>% 
+  
+   # change site, species and event_id to factor
+  mutate_if(is.character,
+            as.factor) %>% 
+  
+  # change species names to lowercase and replace spaces with'_'
+  mutate(species = species %>% 
+           str_to_lower() %>% 
+           str_replace_all(' ', '_'))
+  
+ 
+```
+
+Let's look over both data sets again before we proceed 
+
+```{r check data}
+
+str(deploy_fixed)
+str(detections)
+```
+
+For plotting and formatting proportional monthly detections we need to create a subset of the species in the detections data to just include several focal species we are interested in
+
+```{r focal species}
+
+# create a list of focal species for filtering the data/plots
+srfn_focal_species <- c('white-tailed_deer',
+             'black_bear',
+             'cougar',
+             'coyote',   
+             'elk', 
+             'fisher',
+             'grey_wolf',        
+             'grizzly_bear',             
+             'lynx',  
+             'marten',
+             'moose',             
+             'mule_deer',                          
+             'red_fox',
+             'snowshoe_hare')
+
+```
+
+## 1. Total independent detections
+
+The first response metric we will calculate is the total number of
+independent detections per species per site.
+
+To do this we use the detections data we created earlier from the raw
+timelapse data. We need to group by site and species and then we can use
+the `summarise()` function with the `n()` function to count the total
+detections After that we ungroup the data so if we run an analysis or
+make a plot it doesn't stay grouped and then we use the `pivot_wider()`
+function to make a column for each species and a row for each site.
+
+Finally we need to replace any NAs with zeros (the `n()` function
+function won't insert a zero if there aren't any observations to count
+so these NAs are indeed zeros)
+
+```{r total ind det}
+
+total_detections <- detections %>% 
+  
+  # group by site and species to count detections
+  group_by(site, species) %>% 
+  
+  # use summarise to count detections per species per site
+  summarise(detections = n(),
+            .groups = 'drop') %>% 
+  
+  pivot_wider(names_from = species,
+              values_from = detections) %>% 
+  
+  # replace NAs with 0 in all species columns
+  mutate(across(
+    where(is.numeric),
+    ~ replace_na(., 0))) %>% 
+  
+  # join the original 'array' and 'site_number' columns back
+  left_join(detections %>% select(site, 
+                                  array, 
+                                  site_number) %>% 
+              distinct(), by = "site") %>% 
+  
+  # rearrange columns to move 'array' and 'site_number' to the front
+  relocate(array, site_number, 
+           .before = site) %>% 
+  
+  # ensure site_number is still a factor
+  mutate(site_number = as.factor(site_number)) %>% 
+  
+   # set the column names to lower case and replace the spaces with '_' (these are both personal preferences of mine)
+  set_names(
+    names(.) %>% 
+      tolower()%>% 
+      str_replace_all(pattern = ' ',
+                      replacement = '_'))
+
+
+head(total_detections)
+```
+
+Now that this data is formatted we should save it to the data/processed
+folder for use later
+
+```{r save total ind det}
+
+# save csv file to processed data folder 
+write_csv(total_detections,
+          'data/processed/srfn_total_detections.csv')
+```
+
+We can also plot this data to see what it looks like
+
+In the code below we create an object called site_detections_plot where
+we pipe the total detection data into the `ggplot()` function after
+doing some formatting to make it plot
+
+```{r plot total ind det}
+
+site_detections_plot <-  total_detections %>% 
+  
+  # we need to pivot longer to create species column again for plotting 
+
+  pivot_longer(cols = 4:33, # will need to adjust these numbers depending on the columns you have in your data each year
+               names_to = 'species',
+               values_to = 'detections') %>% 
+  
+  # remove less useful species using a list created in the 'Graph independent detections' section: #KATE note: the original code was 'mammals' but remember we called it 'animals'
+  #or we can try with only focal species - un-hash whichever line of code you want to use:
+  #filter(species %in% animals) %>%
+  filter(species %in% srfn_focal_species) %>%
+  
+  # pipe into ggplot function
+ggplot(.,
+       aes(x = site,
+           y = detections)) +
+  
+  geom_col() +
+  
+  # use facet wrap to make separate plots for each species 
+  facet_wrap(vars(species)) +
+  
+  # shift axis text to 90 degrees so site name are readable
+  theme(axis.text.x = element_text(angle = 90,
+                                   size = 3),
+        axis.ticks.x = element_blank())
+
+
+# view plot
+site_detections_plot
+
+```
+
+This is not the most readable plot because some species (white-tailed deer cough cough) are skewing the
+x axis really high but it works for exploratory purposes.
+
+If we want to save the plot for easier viewing later we can use the code
+below
+
+```{r save plot total ind det, eval=FALSE}
+
+# save graph as jpeg (can also save as tiff, png, pdf by changing the file extension)
+ggsave('srfn_total_detections_site_focalspp.jpeg',
+       site_detections_plot,
+       path = 'figures',
+       width = 12,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+
+```
+
+## 2. Presence/absences
+
+One response metric we may want to use for those rarer species is simply presence/absence data. Here we can use the total_detections data and replace any values greater than 0 with 1s to create a binary variable.
+
+```{r presence/absence}
+
+# we can use the data from above to create a similar response metric of simply presences and absences per species per site
+
+species_presence <- total_detections %>% 
+  
+  # replace all values above 0 with 1s
+  mutate_if(is.numeric, 
+            ~1 * (. > 0))  
+
+
+
+# now we have presence absence data for all species
+head(species_presence)
+```
+
+We can save this to data/processed
+
+```{r save presence/absences}
+
+# save csv file to processed data folder 
+write_csv(species_presence,
+          'data/processed/srfn_presence_absence.csv')
+```
+
+We may also want to plot this similarly to the total detections per site
+to look at the data easier
+
+As before we create a new object with our plot title name and then pipe
+the data after some formatting into the `ggplot()` function.
+
+```{r plot presence/absence}
+# plot this data in ggplot
+species_presence_plot <- species_presence %>% 
+  
+  # first we need to pivot the data longer again so we have a species column for plotting
+  pivot_longer(cols = 4:33,
+               names_to = 'species',
+               values_to = 'presence') %>% 
+  
+  # remove less useful species using a list created in the 'Graph independent detections' section #KAte: going forward using srfn_focal_species refined list
+  filter(species %in% srfn_focal_species) %>% 
+  
+  # pipe into ggplot function
+ggplot(., 
+       aes(x = site, y = presence)) +
+  
+  # use geom_jitter instead of geom_point so we can shift points on y-axis to make them easier to view
+  geom_jitter(shape = 16,
+              size = 1.5,
+              width = 0,
+              height = 0.05,
+              alpha = 0.5) +
+  
+  # use facet_wrap to make separate plots for each species so data is easier to look at
+  facet_wrap(vars(species)) +
+  
+  # shift axis text to 90 degrees so site name are readable
+  theme(axis.text.x = element_text(angle = 90,
+                                   size = 3))
+
+
+
+# view plot
+species_presence_plot
+```
+
+If we want to save the plot for easier viewing later we can use the code
+below
+
+```{r save plot presence/absence, eval=FALSE}
+
+# save graph as jpeg (can also save as tiff, png, pdf by changing the file extension)
+ggsave('srfn_presence_absence_site.jpeg',
+       species_presence_plot,
+       path = 'figures',
+       width = 12,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+## 3. Proportion monthly detections
+
+The main response metric we want is generated here. 
+
+We need to use the deployment data to determine how many days each camera was active for
+
+The script below, modified from Becca Smith's MSc should do just that!
+
+First we create a new data frame from the deploy_fixed (deployment data frame that's been cleaned) with some of the same columns and a new column 'day' that goes from the start date to the end date of each camera deployment and increases by intervals of 1 (for each day the camera was active). We use this to calculate the number of days/month each camera was active for and create a new variable for this called days_month. and then we create another column based on the days/month the camera was active that classifies each month of data for a camera as keep or remove based on whether there were at least 15 active camera days in that month. This is because we don't want to estimate monthly data for a camera that was working less than half the time.
+
+```{r prop month detections step 1: days active}
+
+deploy_active <- deploy_fixed %>% 
+  
+  # for each row, create a sequence between the start and end dates, and make a new row for that for each date
+  rowwise() %>% 
+  do(data.frame(array = .$array, 
+                site_number = .$site_number,
+                site = .$site, 
+                start = .$start_date, 
+                end = .$end_date, 
+                day = seq(.$start_date, .$end_date, by = "1 day"))) %>% 
+  # Create a new column that determines which month each of your dates is in
+  mutate(month = month(day),
+         year = year(day)) %>% 
+  
+  # group by site, month and year
+  group_by(site, month, year) %>% 
+  
+  # Determine number of days per month camera is active
+  mutate(days_month = length(unique(day))) %>% 
+  
+  # get distinct rows for each 
+  distinct(site, month, year, 
+           .keep_all = TRUE) %>% 
+  
+  # mark which months have < 15 days active to be removed later
+  mutate(remove = case_when(days_month <15 ~ 'remove',
+                            days_month >=15 ~ 'keep'))
+```
+
+
+Now we calculate the total number of months each camera was active for based on the new column we created (remove) for those active at least 15 days/month.
+
+We will use this data again later
+
+```{r prop month detections step 2: months active}
+
+# calculate the total number of months each camera was active for including only those active for >15 days/month or the 'keep' values
+
+deploy_months_active <- deploy_active %>% 
+  
+  # keep only months camera active >15 days
+  filter(remove == 'keep') %>% 
+  
+  # group by site and month
+  group_by(site) %>% 
+  
+  # count total number of months active
+  summarise(months_active = n()) 
+
+# we will use this data later
+
+```
+
+Now that we have identified cameras that were not active long enough each month to reliably extract data from we can use that column to remove this data from the detections data frame.
+
+Then from the data we keep we can create a new data frame that has 1 row per camera and a column for each species indicating how many of the active months each species was detected at that camera.
+
+```{r prop month detections step 3: presences}
+
+# now that we have  identified cameras that were not active long enough each month to reliably extract data from we can use that column to remove this data from the detections data frame
+
+proportional_detections <- detections %>% 
+  
+  # join data to the deploy_active data frame
+  left_join(deploy_active,
+            by = c('site',
+                   'month',
+                   'year')) %>% 
+  
+  # filter by only those we identified as 'keep' (i.e. camera working >=15 days/month)
+  filter(remove == 'keep') %>% 
+  
+  # get a distinct row for each species at each site for each month and year
+  distinct(site, 
+           species, 
+           month,
+           year) %>% 
+  
+  # group by site and species to create data frame with one row per site x species combo
+  group_by(site, 
+           species) %>% 
+  
+  summarise(months_present = n()) %>% 
+  
+  # ungroup data
+  ungroup() %>% 
+  
+  # filter to only species in the list of focal species we created earlier
+  # NOTE when we do this we lose 3 sites because there weren't any of these species detected at those sites during months where the camera was active >= 15 days/month
+  filter(species %in% srfn_focal_species) %>% 
+  
+  # pivot the data wider so there is a column for each species and 1 row per site
+  pivot_wider(names_from = species,
+              values_from = months_present) %>% 
+  
+  # replace NAs with zeros in all species columns
+  mutate(across(
+    where(is.numeric),
+    ~ replace_na(., 0))) %>% 
+  
+  # add column for total months each camera was active from the deploy_months_active object we created earlier
+  
+  left_join(deploy_months_active,
+            by = 'site') %>% 
+  
+  # ensure all species columns are numeric not integer
+  mutate_if(is.integer,
+            as.numeric)
+  
+
+```
+
+Now we can run the function below to create a second column for each species that will represent the number of absences (months the species was not detected) at each camera from the active months.
+
+>Important note, you will need to change the column numbers in the function below if your data frame is a different lenght 
+
+
+```{r prop month detections step 4: absences}
+
+# run a function to create columns for absences based on presence data and how many months the camera was functioning
+
+# first convert data to data frame not a tibble for function to work
+proportional_detections <- as.data.frame(proportional_detections)
+
+# create a vector of the species columns for the loop
+# use all species columns (this value may change year to year)
+cols <- 2:15
+
+for (col in cols) {
+  if (is.numeric(proportional_detections[,col]) & is.numeric(proportional_detections[,16])) 
+    {new_col_name <- paste0("absent_", colnames(proportional_detections)[col])
+    proportional_detections[new_col_name] <- proportional_detections[,16] - proportional_detections[,col]
+  }
+}
+
+```
+
+
+Now we have to do a bit of final wrangling of the data to fix the bear columns because we don't want to consider the months that bears are not active in the months active columns.
+
+```{r prop month detections step 4: bear fix}
+
+# fix bear data
+
+# before we can use this data we need to adjust the columns for bears since they are hibernating we don't want to calculate their presence/absence for those inactive months
+
+# now let's recalculate the number of active months
+months_active_bears <- deploy_active %>% 
+  
+  # filter to months bears are active (April - November)
+  dplyr::filter(month %in% c("4", "5", "6", "7", "8", "9", "10", "11")) %>% 
+  
+  # get distinct rows for each 
+  distinct(site, month, year, 
+           .keep_all = TRUE) %>% 
+  
+  # group by site
+  group_by(site) %>% 
+  
+  # count the number of months active during bear active season and save as new column
+  summarise(months_active_bears = n())
+ 
+
+ 
+
+# now we overwrite the absent column for black bears using new info
+
+proportional_detections_bears <- proportional_detections %>% 
+  
+  # join the bear active data
+  left_join(months_active_bears, 
+            by = 'site') %>% 
+  
+  # overwrite absent black bear column
+  mutate(absent_black_bear = months_active_bears - black_bear,
+         absent_grizzly_bear = months_active_bears - grizzly_bear) %>%
+  
+  # get rid of unnecessary columns for active months
+  select(-c(months_active, 
+            months_active_bears))
+
+```
+
+Finally we can save this data
+
+```{r save prop month detections}
+
+# save data
+write_csv(proportional_detections_bears,
+          'data/processed/srfn_proportional_detections.csv')
+
+
+```
+
+Let's also try to plot the presence data at least for each species so we can see which species we likely have enough data for to model
+
+```{r plot prop month dets}
+
+# first reformat the data so species presence is a column
+proportional_detection_plot <- proportional_detections_bears %>% 
+  
+  pivot_longer(cols = c('black_bear':'cougar'),
+               names_to = 'species_presence',
+               values_to = 'months_present') %>% 
+  
+  select(site, species_presence, months_present) %>% 
+  
+  ggplot(aes(x = site, y = months_present)) +
+  
+  # plot as bars
+  geom_col() +
+  
+  # use facet wrap to generate separate plots for each species
+  facet_wrap(vars(species_presence))
+
+# view plot
+proportional_detection_plot
+```
+
+If we want to save the plot for easier viewing later we can use the code
+below
+
+```{r save plot prop month dets}
+
+# save graph as jpeg (can also save as tiff, png, pdf by changing the file extension)
+ggsave('srfn_proportional_detections.jpeg',
+       proportional_detection_plot,
+       path = 'figures',
+       width = 12,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+
+
+Ready to work with the covariates now!!! Proceed to script #2
