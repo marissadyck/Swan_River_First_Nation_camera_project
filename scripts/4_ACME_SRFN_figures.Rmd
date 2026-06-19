@@ -1387,7 +1387,507 @@ ggsave('figures/publication_figures/figure_2_odds.jpg',
        dpi = 600)
 ```
 
+Adding two other combined plots for presentations emphasizing species with strong relationships with linear features and polygonal features
 
+## Linear features combined plot
+
+
+First re-do plots above to add color to highlight the linear features odds ratios 
+
+### Coyote
+
+```{r}
+# name plot 
+coyote_odds_plot2 <- 
+  
+  # provide data and mapping aesthetics
+  ggplot(coyote_model_odds, aes(x = term, 
+                                y = estimate)) +
+  
+  # add color
+  geom_rect(xmin = 2.5,
+            xmax = 4.75,
+            ymin = 0,
+            ymax = 2.5,
+            fill = '#ECAE68' ) +
+  
+  geom_point() +
+  
+  geom_errorbar(aes(ymin = lower, 
+                    ymax = upper),
+                width = 0.2,
+                linewidth = 0.5,
+                position = position_dodge(width = 0.9)) +
+  
+  geom_hline(yintercept = 1, linetype = "dashed") +
+  
+  labs(y = 'Odds ratio') +
+  
+  scale_x_discrete(labels = ~ str_wrap(as.character(c('Harvest post 2000s',
+                              'Harvest pre 2000s',
+                              'Roads',
+                              'Seismic Lines')), 
+                                       9)) +
+  
+  # scale_x_discrete(labels = c('Harvest post 2000s',
+  #                             'Harvest pre 2000s',
+  #                             'Roads',
+  #                             'Seismic Lines')) +
+  
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05)), 
+                     limits = c(0, NA),
+                     breaks = seq(0, 2.5, by = 0.5)) +
+  
+  coord_flip() +
+  
+  add_phylopic(coyote_img, 
+               x = 4.2,
+               y = 1.9,
+               ysize = 0.6) +
+  
+  theme_classic() +
+  
+  theme(axis.title.y = element_blank(),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+
+coyote_odds_plot2
+```
+### Grey Wolf
+
+```{r}
+# name to save plot later
+grey_wolf_odds_plot2 <- 
+  # provide data and mapping aesthetics
+  ggplot(grey_wolf_model_odds, aes(x = term, 
+                                   y = estimate)) +
+  
+  # add color
+  geom_rect(xmin = 2.5,
+            xmax = 4.75,
+            ymin = 0,
+            ymax = 2.5,
+            fill = '#ECAE68' ) +
+  
+  geom_point() +
+  
+  geom_errorbar(aes(ymin = lower, 
+                    ymax = upper),
+                width = 0.2,
+                linewidth = 0.5,
+                position = position_dodge(width = 0.9)) +
+  
+  geom_hline(yintercept = 1, linetype = "dashed") +
+  
+  labs(y = 'Odds ratio') +
+  
+  scale_x_discrete(labels = ~ str_wrap(as.character(c('Mixed Forest',
+                              'Shrubs',
+                              'Roads',
+                              'Seismic lines')), 
+                                       9)) +
+  
+  # scale_x_discrete(labels = c('Mixed Forest',
+  #                             'Shrubs',
+  #                             'Roads',
+  #                             'Seismic lines')) +
+  
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05)), 
+                     limits = c(0, NA)) +
+  
+  coord_flip() +
+  
+  add_phylopic(wolf_img, 
+               x = 4.2,
+               y = 2.1,
+               ysize = 0.75) +
+  
+  theme_classic() +
+  
+  theme(axis.title.y = element_blank(),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+
+grey_wolf_odds_plot2
+```
+
+
+### Moose
+
+```{r}
+# name to save plot later
+moose_odds_plot2 <- 
+# provide data and mapping aesthetics
+ggplot(moose_model_odds, aes(x = term, 
+                          y = estimate)) +
+  
+  # add color
+  geom_rect(xmin = 0,
+            xmax = 2.75,
+            ymin = 0,
+            ymax = 2.5,
+            fill = '#ECAE68' ) +
+  
+  geom_point() +
+  
+   geom_errorbar(aes(ymin = lower, 
+                     ymax = upper),
+                width = 0.2,
+                linewidth = 0.5,
+                position = position_dodge(width = 0.9)) +
+  
+   geom_hline(yintercept = 1, linetype = "dashed") +
+  
+  labs(y = 'Odds ratio') +
+  
+    scale_x_discrete(labels = ~ str_wrap(as.character(c('Roads',
+                              'Seismic lines')), 
+                                       9)) +
+  
+  # scale_x_discrete(labels = c('Roads',
+  #                             'Seismic lines')) +
+  
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05)), 
+                     limits = c(0, 2.5),
+                     breaks = seq(0, 2.5, by = 0.5)) +
+  
+  coord_flip() +
+  
+  add_phylopic(moose_img, 
+               x = 2.2,
+               y = 1.9,
+               ysize = 0.5) +
+  
+  theme_classic() +
+  
+  theme(axis.title.y = element_blank(),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+
+moose_odds_plot2
+```
+
+### Black bear
+
+```{r}
+# name to save plot later
+bbear_odds_plot2 <- 
+# provide data and mapping aesthetics
+ggplot(bbear_model_odds, aes(x = term, 
+                          y = estimate)) +
+  
+  # add color
+  geom_rect(xmin = 0,
+            xmax = 2.75,
+            ymin = 0,
+            ymax = 2.5,
+            fill = '#ECAE68' ) +
+  
+  geom_point() +
+  
+   geom_errorbar(aes(ymin = lower, 
+                     ymax = upper),
+                width = 0.2,
+                linewidth = 0.5,
+                position = position_dodge(width = 0.9)) +
+  
+   geom_hline(yintercept = 1, linetype = "dashed") +
+  
+  labs(y = 'Odds ratio') +
+  
+  scale_x_discrete(labels = ~ str_wrap(as.character(c('Roads',
+                                                      'Seismic Lines')), 
+                                       9)) +
+  
+  # scale_x_discrete(labels = c('Roads',
+  #                             'Seismic Lines')) +
+  
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05)), 
+                     limits = c(0, 2.5)) +
+  
+  coord_flip() +
+  
+  add_phylopic(black_bear_img, 
+               x = 2.4,
+               y = 1.9,
+               ysize = 0.25) +
+  
+  theme_classic() +
+  
+  theme(axis.title.y = element_blank(),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+
+bbear_odds_plot2
+```
+
+### Combine plots and save
+
+```{r}
+
+# first remove axis 
+
+# List of plots
+lf_plots <- list (grey_wolf_odds_plot2,
+                  coyote_odds_plot2,
+                  moose_odds_plot2,
+                  bbear_odds_plot2)
+
+# Remove the x-axis from each plot using purrr::map
+lf_plots_no_xaxis <- lf_plots %>% 
+  
+  map( ~ .x 
+       + theme(axis.title.x = element_blank()))
+
+
+lf_plot <- ggarrange(plotlist = lf_plots_no_xaxis,
+          ncol = 2,
+          nrow = 2)
+
+lf_plot <-  annotate_figure(lf_plot,
+                             bottom = text_grob('Odds ratio'))
+
+lf_plot
+
+```
+Save plot
+
+```{r}
+ggsave('figures/presentation_figures/lf_odds_plot.jpg',
+       lf_plot,
+       width = 12,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
+
+
+## Polygonal features combined plots
+
+Same thing as with the LF plots, I want to regroup the species with polygonal features for a presentation and add color boxes to highlight the odds ratios to look at 
+
+### Coyote
+
+```{r}
+# name plot 
+coyote_odds_plot3 <- 
+  
+  # provide data and mapping aesthetics
+  ggplot(coyote_model_odds, aes(x = term, 
+                                y = estimate)) +
+  
+  # add color
+  geom_rect(xmin = 0,
+            xmax = 2.5,
+            ymin = 0,
+            ymax = 2.5,
+            fill = '#EDCF7F' ) +
+  
+  geom_point() +
+  
+  geom_errorbar(aes(ymin = lower, 
+                    ymax = upper),
+                width = 0.2,
+                linewidth = 0.5,
+                position = position_dodge(width = 0.9)) +
+  
+  geom_hline(yintercept = 1, linetype = "dashed") +
+  
+  labs(y = 'Odds ratio') +
+  
+  scale_x_discrete(labels = ~ str_wrap(as.character(c('Harvest post 2000s',
+                              'Harvest pre 2000s',
+                              'Roads',
+                              'Seismic Lines')), 
+                                       9)) +
+  
+  # scale_x_discrete(labels = c('Harvest post 2000s',
+  #                             'Harvest pre 2000s',
+  #                             'Roads',
+  #                             'Seismic Lines')) +
+  
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05)), 
+                     limits = c(0, NA),
+                     breaks = seq(0, 2.5, by = 0.5)) +
+  
+  coord_flip() +
+  
+  add_phylopic(coyote_img, 
+               x = 4.2,
+               y = 1.9,
+               ysize = 0.6) +
+  
+  theme_classic() +
+  
+  theme(axis.title.y = element_blank(),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+
+coyote_odds_plot3
+```
+
+### Lynx
+
+```{r}
+# name to save plot later
+lynx_odds_plot3 <- 
+# provide data and mapping aesthetics
+ggplot(lynx_model_odds, aes(x = term, 
+                          y = estimate)) +
+  
+  # add color
+  geom_rect(xmin = 0,
+            xmax = 3.75,
+            ymin = 0,
+            ymax = 2.5,
+            fill = '#EDCF7F' ) +
+  
+  geom_point() +
+  
+   geom_errorbar(aes(ymin = lower, 
+                     ymax = upper),
+                width = 0.2,
+                linewidth = 0.5,
+                position = position_dodge(width = 0.9)) +
+  
+   geom_hline(yintercept = 1, linetype = "dashed") +
+  
+  labs(y = 'Odds ratio') +
+  
+    scale_x_discrete(labels = ~ str_wrap(as.character(c('Harvest post 2000s',
+                              'Harvest pre 2000s',
+                              'Wells')), 
+                                       9)) +
+  
+  # scale_x_discrete(labels = c('Harvest ppost 2000s',
+  #                             'Harvest pre 2000s',
+  #                             'Wells')) +
+  
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05)), 
+                     limits = c(0, NA)) +
+  
+  coord_flip() +
+  
+  add_phylopic(lynx_img, 
+               x = 3.4,
+               y = 2.2,
+               ysize = 0.5) +
+  
+  theme_classic() +
+  
+  theme(axis.title.y = element_blank(),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+
+lynx_odds_plot3
+```
+
+### Snowshoe hare
+
+```{r}
+# name to save plot later
+hare_odds_plot3 <- 
+# provide data and mapping aesthetics
+ggplot(hare_model_odds, aes(x = term, 
+                          y = estimate)) +
+   # add color
+  geom_rect(xmin = 0,
+            xmax = 2.5,
+            ymin = 0,
+            ymax = 2.75,
+            fill = '#EDCF7F' ) +
+  
+   # add color
+  geom_rect(xmin = 3.5,
+            xmax = 4.75,
+            ymin = 0,
+            ymax = 2.75,
+            fill = '#EDCF7F' ) +
+  
+  
+  
+  geom_point() +
+  
+   geom_errorbar(aes(ymin = lower, 
+                     ymax = upper),
+                width = 0.2,
+                linewidth = 0.5,
+                position = position_dodge(width = 0.9)) +
+  
+   geom_hline(yintercept = 1, linetype = "dashed") +
+  
+  labs(y = 'Odds ratio') +
+  
+      scale_x_discrete(labels = ~ str_wrap(as.character(c('Harvest post 2000s',
+                              'Harvest pre 2000s',
+                              'Seismic lines',
+                              'Wells')), 
+                                       9)) +
+  
+  # scale_x_discrete(labels = c('Harvest post 2000s',
+  #                             'Harvest pre 2000s',
+  #                             'Seismic lines',
+  #                             'Wells')) +
+  
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05)), 
+                     limits = c(0, 2.5),
+                     breaks = seq(0, 2.5, by = 0.5)) +
+  
+  coord_flip() +
+  
+  add_phylopic(hare_img, 
+               x = 4.25,
+               y = 2.5,
+               ysize = 0.55) +
+  
+  theme_classic() +
+  
+  theme(axis.title.y = element_blank(),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14))
+
+hare_odds_plot3
+```
+
+
+### Combine plots and save
+
+```{r}
+# first remove axis 
+
+# List of plots
+pol_plots <- list (lynx_odds_plot3,
+                   coyote_odds_plot3,
+                  hare_odds_plot3)
+
+# Remove the x-axis from each plot using purrr::map
+pol_plots_no_xaxis <- pol_plots %>% 
+  
+  map( ~ .x 
+       + theme(axis.title.x = element_blank()))
+
+
+pol_plot <- ggarrange(plotlist = pol_plots_no_xaxis,
+          ncol = 2,
+          nrow = 2)
+
+pol_plot <-  annotate_figure(pol_plot,
+                             bottom = text_grob('Odds ratio'))
+
+pol_plot
+
+```
+
+Save plot
+
+```{r}
+ggsave('figures/presentation_figures/pol_odds_plot.jpg',
+       pol_plot,
+       width = 12,
+       height = 10,
+       units = 'in',
+       dpi = 600)
+```
 
 # Predictive plots
 
